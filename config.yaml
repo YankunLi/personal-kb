@@ -1,0 +1,104 @@
+# ============================================================
+# Personal Knowledge Base RAG System - Configuration
+# ============================================================
+
+defaults:
+  kb: "default"
+  provider: "qwen"
+
+# --- Document Processing ---
+chunking:
+  chunk_size: 500
+  chunk_overlap: 80
+  separators:
+    - "\n## "
+    - "\n### "
+    - "\n#### "
+    - "\n"
+    - "。"
+    - "."
+    - "！"
+    - "？"
+    - " "
+  enable_deduplication: true
+
+# --- Embedding (CRITICAL: version pinned) ---
+embedding:
+  model_name: "BAAI/bge-m3"
+  model_revision: "main"
+  dimensions: 1024
+  normalize: true
+  batch_size: 32
+  query_instruction: "为这个句子生成表示以用于检索相关文章："
+  cache_dir: "data/embedding_cache"
+  cache_max_entries: 10000
+
+# --- Vector Store ---
+vector_store:
+  backend: "chromadb"
+  persist_dir: "data/chroma_db"
+  distance_metric: "cosine"
+
+# --- Retrieval ---
+retrieval:
+  dense_top_k: 50
+  sparse_top_k: 50
+  rrf_k: 60
+  hybrid_top_k: 50
+  rerank_top_n: 5
+  reranker_model: "BAAI/bge-reranker-v2-m3"
+  semantic_cache:
+    enabled: true
+    similarity_threshold: 0.95
+    max_size: 1000
+
+# --- LLM Providers ---
+llm:
+  temperature: 0.3
+  max_tokens: 1024
+  stream: true
+  retry:
+    max_attempts: 3
+    backoff_seconds: 1.0
+
+  providers:
+    qwen:
+      name: "阿里通义千问"
+      base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+      model: "qwen-turbo"
+      api_key: "${QWEN_API_KEY}"
+
+    glm:
+      name: "智谱GLM"
+      base_url: "https://open.bigmodel.cn/api/paas/v4"
+      model: "glm-4-flash"
+      api_key: "${GLM_API_KEY}"
+
+    deepseek:
+      name: "DeepSeek"
+      base_url: "https://api.deepseek.com/v1"
+      model: "deepseek-chat"
+      api_key: "${DEEPSEEK_API_KEY}"
+
+    hunyuan:
+      name: "腾讯混元"
+      base_url: "https://api.hunyuan.cloud.tencent.com/v1"
+      model: "hunyuan-lite"
+      api_key: "${HUNYUAN_API_KEY}"
+
+    ernie:
+      name: "百度文心一言"
+      base_url: "https://qianfan.baidubce.com/v2"
+      model: "ernie-speed-128k"
+      api_key: "${ERNIE_API_KEY}"
+
+# --- Hallucination Detection ---
+hallucination:
+  enabled: true
+  entity_overlap_threshold: 0.7
+
+# --- Data Paths ---
+paths:
+  kb_registry: "data/kb_registry.json"
+  bm25_index_dir: "data/bm25"
+  chroma_db: "data/chroma_db"

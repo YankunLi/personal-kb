@@ -1,0 +1,33 @@
+# Virtual environment
+.venv/
+
+# Runtime data
+data/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# pip build artifacts
+*.egg-info/
+*.egg
+build/
+dist/
+
+# Environment (contains real API keys)
+.env
+
+# Reference articles (not project code)
+a.txt
+b.txt
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
