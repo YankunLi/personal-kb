@@ -69,23 +69,77 @@
 
 ### 环境要求
 
+- macOS / Linux
 - Python >= 3.11
-- 首次运行需下载 BGE-M3 模型（约 2GB），如无法访问 HuggingFace，设置 `HF_ENDPOINT=https://hf-mirror.com`
+- 磁盘空间约 5GB（BGE-M3 模型约 2GB + 依赖包约 2GB）
 
-### 安装
+### 一键安装
 
 ```bash
 cd personal-kb
+bash setup.sh
+```
 
-# 创建虚拟环境
-python3.11 -m venv .venv --system-site-packages
+脚本自动完成：创建虚拟环境 → 安装依赖 → 安装项目。
+
+### 手动安装
+
+<details>
+<summary>展开查看分步操作</summary>
+
+**1. 创建虚拟环境**
+
+```bash
+python3.11 -m venv .venv
 source .venv/bin/activate
+```
 
-# 安装
+**2. 安装依赖**
+
+如果网络通畅（海外）：
+```bash
 pip install -e .
 ```
 
-### 配置
+如果在国内，建议使用清华镜像加速：
+```bash
+pip install -e . -i https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+> 依赖中包含 torch、sentence-transformers、chromadb 等较大包，首次安装约需 5-10 分钟。
+
+**3. 下载 Embedding 模型（首次运行自动触发）**
+
+如果无法访问 HuggingFace，设置镜像：
+```bash
+export HF_ENDPOINT=https://hf-mirror.com
+```
+
+</details>
+
+### 安装后验证
+
+```bash
+# 激活环境
+source .venv/bin/activate
+
+# 创建测试文档
+mkdir -p /tmp/test_docs
+echo "# 测试文档\n\n这是一段测试内容，用于验证系统是否正常工作。" > /tmp/test_docs/test.md
+
+# 导入测试
+kb import /tmp/test_docs --kb test
+
+# 搜索测试
+kb search "测试内容" --kb test --show-scores
+
+# 清理
+kb kb delete test --force
+```
+
+看到搜索结果即表示安装成功。
+
+### 配置 LLM
 
 ```bash
 # 复制配置文件
