@@ -377,7 +377,11 @@ class Pipeline:
                 "content": "抱歉，在当前知识库中没有找到相关信息。",
             }
             yield {"type": "sources", "sources": []}
-            yield {"type": "done"}
+            yield {
+                "type": "done",
+                "hallucination_risk": "low",
+                "latency_ms": (time.time() - start_time) * 1000,
+            }
             return
 
         # Rerank

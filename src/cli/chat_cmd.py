@@ -16,7 +16,12 @@ def chat_cmd(kb_name: str, provider_name: str, no_stream: bool):
     """交互式对话模式，基于知识库问答。"""
     pipeline = get_pipeline()
 
-    kb_info = pipeline.kb_manager.get(kb_name)
+    try:
+        kb_info = pipeline.kb_manager.get(kb_name)
+    except ValueError as e:
+        click.echo(f"❌ {e}")
+        return
+
     prov_name = provider_name or pipeline.config.defaults.provider
     prov_info = pipeline.config.llm.providers.get(prov_name)
 
@@ -26,6 +31,7 @@ def chat_cmd(kb_name: str, provider_name: str, no_stream: bool):
     click.echo("输入 /exit 退出, /help 查看帮助, /sources 查看来源, /clear 清除历史\n")
 
     chat_history: list[dict[str, str]] = []
+    last_sources: list = []
 
     while True:
         try:
@@ -57,7 +63,10 @@ def chat_cmd(kb_name: str, provider_name: str, no_stream: bool):
 """)
                 continue
             elif cmd == "/sources":
-                click.echo("暂无来源（请先提问）")
+                if last_sources:
+                    click.echo(format_sources_output(last_sources))
+                else:
+                    click.echo("暂无来源（请先提问）")
                 continue
             elif cmd == "/clear":
                 chat_history.clear()
@@ -87,11 +96,11 @@ def chat_cmd(kb_name: str, provider_name: str, no_stream: bool):
 
         # Normal query
         click.echo()  # blank line
-        asyncio.run(_do_chat(pipeline, query, kb_name, provider_name, chat_history, no_stream))
+        asyncio.run(_do_chat(pipeline, query, kb_name, provider_name, chat_history, last_sources, no_stream))
         click.echo()
 
 
-async def _do_chat(pipeline, query, kb_name, provider_name, chat_history, no_stream):
+async def _do_chat(pipeline, query, kb_name, provider_name, chat_history, last_sources, no_stream):
     """Execute a chat turn with streaming output."""
     if no_stream:
         response = await pipeline.chat(
@@ -100,6 +109,8 @@ async def _do_chat(pipeline, query, kb_name, provider_name, chat_history, no_str
         )
         click.echo(f"🤖 {response.answer}")
         if response.sources:
+            last_sources.clear()
+            last_sources.extend(response.sources)
             click.echo(format_sources_output(response.sources))
         if response.hallucination_risk != "low":
             click.echo(f"⚠️  幻觉风险: {response.hallucination_risk}")
@@ -123,6 +134,8 @@ async def _do_chat(pipeline, query, kb_name, provider_name, chat_history, no_str
                 full_answer = chunk["content"]
             elif chunk["type"] == "sources":
                 sources = chunk["sources"]
+                last_sources.clear()
+                last_sources.extend(chunk["sources"])
             elif chunk["type"] == "done":
                 click.echo()
                 if sources:
@@ -147,4 +160,4 @@ def ask_cmd(query: str, kb_name: str, provider_name: str, no_stream: bool):
     pipeline = get_pipeline()
 
     click.echo(f"🔍 在知识库 '{kb_name}' 中查询...\n")
-    asyncio.run(_do_chat(pipeline, query, kb_name, provider_name, [], no_stream))
+    asyncio.run(_do_chat(pipeline, query, kb_name, provider_name, [], [], no_stream))

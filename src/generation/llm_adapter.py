@@ -61,6 +61,9 @@ class LLMAdapter:
             "stream": stream,
         }
 
+        if self.max_retries < 1:
+            raise ValueError("max_retries must be at least 1")
+
         for attempt in range(self.max_retries):
             try:
                 response = await self.client.post(

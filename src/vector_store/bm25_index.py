@@ -58,13 +58,9 @@ class BM25Index:
         For a personal KB with few documents, rebuilding is fast enough.
         """
         all_chunks = [
-            {"content": c, "metadata": m}
+            {"content": c, "metadata": dict(m)}
             for c, m in zip(self._corpus, self._metadatas)
         ]
-        # Convert metadata dicts back to chunk format
-        for i, chunk in enumerate(all_chunks):
-            chunk["metadata"]["chunk_id"] = self._chunk_ids[i]
-
         all_chunks.extend(chunks)
         self.build(all_chunks)
 

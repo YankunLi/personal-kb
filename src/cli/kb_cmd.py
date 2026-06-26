@@ -85,13 +85,15 @@ def kb_use(name: str):
     import shutil
     from pathlib import Path
 
+    from src.config.loader import get_project_root
+
     pipeline = get_pipeline()
     if not pipeline.kb_manager.exists(name):
         click.echo(f"❌ 知识库 '{name}' 不存在")
         return
 
     # Update config.yaml preserving comments and formatting
-    config_path = Path("config.yaml")
+    config_path = get_project_root() / "config.yaml"
     with open(config_path, "r") as f:
         content = f.read()
 
@@ -172,12 +174,14 @@ def provider_use(name: str):
     import shutil
     from pathlib import Path
 
+    from src.config.loader import get_project_root
+
     config = load_config()
     if name not in config.llm.providers:
         click.echo(f"❌ 未知提供商 '{name}'。可用: {list(config.llm.providers.keys())}")
         return
 
-    config_path = Path("config.yaml")
+    config_path = get_project_root() / "config.yaml"
     with open(config_path, "r") as f:
         content = f.read()
 

@@ -153,16 +153,27 @@ class KBManager:
             self.chroma.get_or_create_collection(new_name)
         else:
             if old_data["ids"]:
-                self.chroma._client.get_or_create_collection(
+                new_coll = self.chroma._client.get_or_create_collection(
                     name=new_collection,
                     metadata={"hnsw:space": "cosine"},
-                ).add(
+                )
+                new_coll.add(
                     ids=old_data["ids"],
                     documents=old_data["documents"] or [],
                     metadatas=old_data["metadatas"] or [],
                     embeddings=old_data["embeddings"] or [],
                 )
-            self.chroma.delete_collection(old_name)
+                # Verify copy succeeded before deleting old data
+                if new_coll.count() >= len(old_data["ids"]):
+                    self.chroma.delete_collection(old_name)
+                else:
+                    self.chroma.delete_collection(new_name)
+                    raise RuntimeError(
+                        f"Failed to copy all chunks during rename "
+                        f"(expected {len(old_data['ids'])}, got {new_coll.count()})"
+                    )
+            else:
+                self.chroma.delete_collection(old_name)
 
         # Copy BM25 index
         old_bm25 = self.bm25.index_dir / old_name / "bm25.pkl"

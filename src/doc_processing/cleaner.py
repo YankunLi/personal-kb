@@ -1,5 +1,6 @@
 """Text cleaning and normalization for extracted document content."""
 
+import html
 import re
 import unicodedata
 
@@ -14,13 +15,8 @@ def clean_html_text(text: str) -> str:
     # Phase 1: Remove any remaining HTML/XML tags
     text = re.sub(r"<[^>]+>", "", text)
 
-    # Remove common web artifacts
-    text = re.sub(r"&nbsp;", " ", text)
-    text = re.sub(r"&amp;", "&", text)
-    text = re.sub(r"&lt;", "<", text)
-    text = re.sub(r"&gt;", ">", text)
-    text = re.sub(r"&quot;", '"', text)
-    text = re.sub(r"&#?\w+;", "", text)
+    # Decode all HTML entities to their Unicode equivalents
+    text = html.unescape(text)
 
     # Phase 2: Normalize
     text = normalize_text(text)
