@@ -81,6 +81,8 @@ def kb_use(name: str):
     NAME: 知识库名称。
     """
     import re
+    import tempfile
+    import shutil
     from pathlib import Path
 
     pipeline = get_pipeline()
@@ -94,8 +96,9 @@ def kb_use(name: str):
         content = f.read()
 
     content = re.sub(r"(\n\s*kb:\s*)\S+", rf"\1{name}", content)
-    with open(config_path, "w") as f:
-        f.write(content)
+    with tempfile.NamedTemporaryFile("w", dir=config_path.parent, delete=False, encoding="utf-8") as tf:
+        tf.write(content)
+    shutil.move(tf.name, config_path)
 
     click.echo(f"✅ 默认知识库已切换为 '{name}'")
 
@@ -165,6 +168,8 @@ def provider_use(name: str):
     NAME: 提供商名称 (qwen/glm/deepseek/hunyuan/ernie)。
     """
     import re
+    import tempfile
+    import shutil
     from pathlib import Path
 
     config = load_config()
@@ -177,7 +182,8 @@ def provider_use(name: str):
         content = f.read()
 
     content = re.sub(r"(\n\s*provider:\s*)\S+", rf"\1{name}", content)
-    with open(config_path, "w") as f:
-        f.write(content)
+    with tempfile.NamedTemporaryFile("w", dir=config_path.parent, delete=False, encoding="utf-8") as tf:
+        tf.write(content)
+    shutil.move(tf.name, config_path)
 
     click.echo(f"✅ 默认 LLM 已切换为 '{name}' ({config.llm.providers[name].name})")

@@ -25,7 +25,10 @@ class SemanticCache:
 
     @staticmethod
     def _cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
-        return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+        norm_product = np.linalg.norm(a) * np.linalg.norm(b)
+        if norm_product == 0:
+            return 0.0
+        return float(np.dot(a, b) / norm_product)
 
     def get(self, query_embedding: np.ndarray) -> dict[str, Any] | None:
         """Check if a similar query is cached.

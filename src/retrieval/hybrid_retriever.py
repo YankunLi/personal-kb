@@ -33,12 +33,14 @@ class HybridRetriever:
         self.rrf_k = rrf_k
 
     def dense_search(
-        self, kb_name: str, query: str, top_k: int | None = None
+        self, kb_name: str, query: str, top_k: int | None = None,
+        query_embedding: np.ndarray | None = None,
     ) -> list[dict[str, Any]]:
         """Vector similarity search via ChromaDB."""
         if top_k is None:
             top_k = self.dense_top_k
-        query_embedding = self.embedder.encode_query(query)
+        if query_embedding is None:
+            query_embedding = self.embedder.encode_query(query)
         return self.chroma.query(kb_name, query_embedding, top_k=top_k)
 
     def sparse_search(
@@ -54,6 +56,7 @@ class HybridRetriever:
         kb_name: str,
         query: str,
         top_k: int | None = None,
+        query_embedding: np.ndarray | None = None,
     ) -> list[dict[str, Any]]:
         """Hybrid search with RRF fusion of dense and sparse results.
 
@@ -61,6 +64,7 @@ class HybridRetriever:
             kb_name: Knowledge base name.
             query: User query string.
             top_k: Number of results after fusion.
+            query_embedding: Pre-computed query embedding for dense search.
 
         Returns:
             List of result dicts with RRF fusion scores.
@@ -68,7 +72,7 @@ class HybridRetriever:
         if top_k is None:
             top_k = self.dense_top_k
 
-        dense_results = self.dense_search(kb_name, query, top_k=self.dense_top_k)
+        dense_results = self.dense_search(kb_name, query, top_k=self.dense_top_k, query_embedding=query_embedding)
         sparse_results = self.sparse_search(query, top_k=self.sparse_top_k)
 
         if not dense_results and not sparse_results:
@@ -109,6 +113,15 @@ class HybridRetriever:
         kb_name: str,
         query: str,
         top_k: int | None = None,
+        query_embedding: np.ndarray | None = None,
     ) -> list[dict[str, Any]]:
-        """Main retrieval entry point: hybrid search → top-k results."""
-        return self.hybrid_search(kb_name, query, top_k=top_k)
+        """Main retrieval entry point: hybrid search → top-k results.
+
+        Args:
+            kb_name: Knowledge base name.
+            query: User query string.
+            top_k: Number of results after fusion.
+            query_embedding: Pre-computed query embedding. If provided, skips
+                re-encoding the query for dense search.
+        """
+        return self.hybrid_search(kb_name, query, top_k=top_k, query_embedding=query_embedding)

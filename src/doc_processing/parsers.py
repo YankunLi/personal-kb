@@ -75,7 +75,7 @@ def parse_docx(file_path: Path) -> str:
         text = para.text.strip()
         if text:
             # Detect heading style
-            if para.style.name.startswith("Heading"):
+            if para.style and para.style.name and para.style.name.startswith("Heading"):
                 level = para.style.name.split()[-1]
                 try:
                     level = int(level)

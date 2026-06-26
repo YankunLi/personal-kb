@@ -268,9 +268,11 @@ class Pipeline:
         # Load BM25 index for this KB
         self.bm25.load(kb_name)
 
+        # Compute query embedding once for cache + retrieval
+        query_emb = self.embedder.encode_query(query)
+
         # Check semantic cache
         if self.config.retrieval.semantic_cache["enabled"]:
-            query_emb = self.embedder.encode_query(query)
             cached = self.semantic_cache.get(query_emb)
             if cached:
                 latency = (time.time() - start_time) * 1000
@@ -282,7 +284,7 @@ class Pipeline:
                 )
 
         # Hybrid search
-        results = self.retriever.retrieve(kb_name, query)
+        results = self.retriever.retrieve(kb_name, query, query_embedding=query_emb)
 
         if not results:
             latency = (time.time() - start_time) * 1000
@@ -300,8 +302,9 @@ class Pipeline:
         messages = build_messages(query, results, chat_history=chat_history)
 
         # Generate
-        llm = self._get_llm_adapter(provider_name)
+        llm = None
         try:
+            llm = self._get_llm_adapter(provider_name)
             if stream:
                 answer = ""
                 async for token in llm.chat_stream(messages):
@@ -309,7 +312,8 @@ class Pipeline:
             else:
                 answer = await llm.chat(messages)
         finally:
-            await llm.close()
+            if llm is not None:
+                await llm.close()
 
         # Hallucination check
         is_risk, overlap = detect_hallucination(
@@ -323,7 +327,6 @@ class Pipeline:
 
         # Update semantic cache
         if self.config.retrieval.semantic_cache["enabled"]:
-            query_emb = self.embedder.encode_query(query)
             self.semantic_cache.set(query_emb, answer, sources)
 
         latency = (time.time() - start_time) * 1000
@@ -352,9 +355,11 @@ class Pipeline:
         # Load BM25 index
         self.bm25.load(kb_name)
 
+        # Compute query embedding once for cache + retrieval
+        query_emb = self.embedder.encode_query(query)
+
         # Check semantic cache
         if self.config.retrieval.semantic_cache["enabled"]:
-            query_emb = self.embedder.encode_query(query)
             cached = self.semantic_cache.get(query_emb)
             if cached:
                 yield {"type": "answer", "content": cached["answer"]}
@@ -367,7 +372,7 @@ class Pipeline:
                 return
 
         # Hybrid search
-        results = self.retriever.retrieve(kb_name, query)
+        results = self.retriever.retrieve(kb_name, query, query_embedding=query_emb)
 
         if not results:
             yield {
@@ -385,14 +390,16 @@ class Pipeline:
         messages = build_messages(query, results, chat_history=chat_history)
 
         # Generate streaming
-        llm = self._get_llm_adapter(provider_name)
-        full_answer = ""
+        llm = None
         try:
+            llm = self._get_llm_adapter(provider_name)
+            full_answer = ""
             async for token in llm.chat_stream(messages):
                 full_answer += token
                 yield {"type": "token", "content": token}
         finally:
-            await llm.close()
+            if llm is not None:
+                await llm.close()
 
         # Hallucination check
         is_risk, overlap = detect_hallucination(
@@ -405,7 +412,6 @@ class Pipeline:
 
         # Update semantic cache
         if self.config.retrieval.semantic_cache["enabled"]:
-            query_emb = self.embedder.encode_query(query)
             self.semantic_cache.set(query_emb, full_answer, sources)
 
         yield {"type": "sources", "sources": sources}
