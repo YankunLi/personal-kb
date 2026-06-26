@@ -59,9 +59,6 @@ def normalize_text(text: str) -> str:
     # Remove empty lines at start and end
     text = text.strip()
 
-    # Remove lines that are entirely non-content (e.g., only punctuation)
-    text = re.sub(r"\n[^\w\u4e00-\u9fff]*\n", "\n", text)
-
     return text
 
 

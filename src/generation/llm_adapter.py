@@ -67,12 +67,12 @@ class LLMAdapter:
                     "/v1/chat/completions",
                     json=payload,
                 )
-                # Don't retry on permanent 4xx errors (except 429 rate limit)
-                if response.status_code >= 400 and response.status_code < 500 and response.status_code != 429:
-                    response.raise_for_status()
                 response.raise_for_status()
                 return response
             except (httpx.HTTPError, httpx.TimeoutException) as e:
+                # Don't retry on permanent client errors (4xx except 429)
+                if isinstance(e, httpx.HTTPStatusError) and e.response.status_code < 500:
+                    raise
                 if attempt < self.max_retries - 1:
                     wait = self.backoff_seconds * (2 ** attempt)
                     await asyncio.sleep(wait)

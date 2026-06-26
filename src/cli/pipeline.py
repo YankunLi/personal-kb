@@ -10,7 +10,6 @@ from src.doc_processing.chunker import chunk_document
 from src.doc_processing.metadata import build_base_metadata, enrich_chunks
 from src.doc_processing.deduplicator import ChunkDeduplicator
 from src.embedding.embedder import Embedder
-from src.embedding.cache import EmbeddingCache
 from src.vector_store.chroma_store import ChromaStore
 from src.vector_store.bm25_index import BM25Index
 from src.retrieval.hybrid_retriever import HybridRetriever
@@ -76,10 +75,6 @@ class Pipeline:
         self.semantic_cache = SemanticCache(
             similarity_threshold=config.retrieval.semantic_cache["similarity_threshold"],
             max_size=config.retrieval.semantic_cache["max_size"],
-        )
-        self.embedding_cache = EmbeddingCache(
-            cache_dir=config.embedding.cache_dir,
-            max_entries=config.embedding.cache_max_entries,
         )
         self.deduplicator = ChunkDeduplicator()
 
@@ -368,7 +363,7 @@ class Pipeline:
                 yield {
                     "type": "done",
                     "hallucination_risk": "low",
-                    "latency_ms": 0,
+                    "latency_ms": (time.time() - start_time) * 1000,
                 }
                 return
 
