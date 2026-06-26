@@ -118,6 +118,9 @@ async def _do_chat(pipeline, query, kb_name, provider_name, chat_history, no_str
             if chunk["type"] == "token":
                 click.echo(chunk["content"], nl=False)
                 full_answer += chunk["content"]
+            elif chunk["type"] == "answer":
+                click.echo(chunk["content"], nl=False)
+                full_answer = chunk["content"]
             elif chunk["type"] == "sources":
                 sources = chunk["sources"]
             elif chunk["type"] == "done":

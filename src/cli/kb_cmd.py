@@ -156,7 +156,7 @@ def provider_list():
     click.echo("-" * 60)
     for key, prov in config.llm.providers.items():
         marker = " *" if key == default_provider else ""
-        has_key = "✅" if prov.api_key and prov.api_key != "sk-xxxx" and "xxx" not in prov.api_key.lower() else "❌"
+        has_key = "✅" if prov.api_key and not prov.api_key.startswith("${") and "xxx" not in prov.api_key.lower() else "❌"
         click.echo(f"{key + marker:<15} {prov.name:<20} {prov.model:<25} {has_key}")
 
 

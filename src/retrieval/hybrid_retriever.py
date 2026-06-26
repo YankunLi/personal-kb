@@ -23,6 +23,7 @@ class HybridRetriever:
         bm25_index: BM25Index,
         dense_top_k: int = 50,
         sparse_top_k: int = 50,
+        hybrid_top_k: int = 50,
         rrf_k: int = 60,
     ):
         self.embedder = embedder
@@ -30,6 +31,7 @@ class HybridRetriever:
         self.bm25 = bm25_index
         self.dense_top_k = dense_top_k
         self.sparse_top_k = sparse_top_k
+        self.hybrid_top_k = hybrid_top_k
         self.rrf_k = rrf_k
 
     def dense_search(
@@ -70,7 +72,7 @@ class HybridRetriever:
             List of result dicts with RRF fusion scores.
         """
         if top_k is None:
-            top_k = self.dense_top_k
+            top_k = self.hybrid_top_k
 
         dense_results = self.dense_search(kb_name, query, top_k=self.dense_top_k, query_embedding=query_embedding)
         sparse_results = self.sparse_search(query, top_k=self.sparse_top_k)

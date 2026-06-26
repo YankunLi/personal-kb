@@ -47,6 +47,14 @@ class RAGResponse:
         }
 
 
+def _extract_page_from_text(text: str) -> int | None:
+    """Extract page number from PDF page markers like [第12页]."""
+    m = re.search(r"\[第(\d+)页\]", text)
+    if m:
+        return int(m.group(1))
+    return None
+
+
 def extract_sources_from_contexts(
     contexts: list[dict[str, Any]],
     max_preview_chars: int = 200,
@@ -69,7 +77,7 @@ def extract_sources_from_contexts(
             chunk_id=metadata.get("chunk_id", ""),
             source_file=metadata.get("source_file_basename", metadata.get("source_file", "未知")),
             section=metadata.get("section"),
-            page=metadata.get("page"),
+            page=metadata.get("page") or _extract_page_from_text(content),
             relevance_score=doc.get("rerank_score", doc.get("score", 0)),
             text_preview=content[:max_preview_chars],
         ))

@@ -69,6 +69,7 @@ class Pipeline:
             bm25_index=self.bm25,
             dense_top_k=config.retrieval.dense_top_k,
             sparse_top_k=config.retrieval.sparse_top_k,
+            hybrid_top_k=config.retrieval.hybrid_top_k,
             rrf_k=config.retrieval.rrf_k,
         )
         self.reranker = Reranker(model_name=config.retrieval.reranker_model)

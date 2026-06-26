@@ -46,6 +46,9 @@ class Reranker:
             Top-n documents sorted by reranker score descending.
         """
         if len(documents) <= top_n:
+            for doc in documents:
+                if "rerank_score" not in doc:
+                    doc["rerank_score"] = doc.get("score", 0.0)
             return documents
 
         pairs = [[query, doc["content"]] for doc in documents]

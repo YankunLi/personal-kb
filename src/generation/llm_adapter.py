@@ -67,6 +67,9 @@ class LLMAdapter:
                     "/v1/chat/completions",
                     json=payload,
                 )
+                # Don't retry on permanent 4xx errors (except 429 rate limit)
+                if response.status_code >= 400 and response.status_code < 500 and response.status_code != 429:
+                    response.raise_for_status()
                 response.raise_for_status()
                 return response
             except (httpx.HTTPError, httpx.TimeoutException) as e:
@@ -118,8 +121,13 @@ class LLMAdapter:
         response = await self._chat_completion_request(
             messages, stream=False, temperature=temperature, max_tokens=max_tokens
         )
-        data = response.json()
-        return data["choices"][0]["message"]["content"]
+        try:
+            data = response.json()
+            return data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, json.JSONDecodeError) as e:
+            raise RuntimeError(
+                f"Unexpected LLM response format: {e}"
+            ) from e
 
     async def close(self):
         """Close the HTTP client."""

@@ -80,9 +80,7 @@ def chunk_document(
     result = []
     total = len(chunks)
     for i, chunk_text in enumerate(chunks):
-        content_hash = hashlib.md5(
-            (metadata.get("source_file", "") + chunk_text).encode("utf-8")
-        ).hexdigest()
+        content_hash = hashlib.md5(chunk_text.encode("utf-8")).hexdigest()
         chunk_meta = {
             **metadata,
             "chunk_index": i,
