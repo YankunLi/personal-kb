@@ -54,6 +54,8 @@ class Pipeline:
             normalize=config.embedding.normalize,
             query_instruction=config.embedding.query_instruction,
             batch_size=config.embedding.batch_size,
+            cache_dir=config.embedding.cache_dir,
+            cache_max_entries=config.embedding.cache_max_entries,
         )
         self.chroma = ChromaStore(persist_dir=config.paths.chroma_db)
         self.bm25 = BM25Index(index_dir=config.paths.bm25_index_dir)
@@ -133,7 +135,8 @@ class Pipeline:
         files_with_new_chunks = 0
         all_chunks = []
 
-        for doc in load_documents(path, recursive=recursive):
+        doc_iter, failed_counter = load_documents(path, recursive=recursive)
+        for doc in doc_iter:
             total_files += 1
             file_path = doc["file_path"]
 
@@ -174,11 +177,14 @@ class Pipeline:
             total_chunks += len(chunks)
             all_chunks.extend(chunks)
 
+        total_failed = failed_counter[0]  # Read after iterator is consumed
+
         if dry_run:
             return {
                 "files": total_files,
                 "chunks": 0,
                 "duplicates": 0,
+                "failed": total_failed,
                 "dry_run": True,
             }
 
@@ -187,6 +193,7 @@ class Pipeline:
                 "files": total_files,
                 "chunks": 0,
                 "duplicates": total_duplicates,
+                "failed": total_failed,
             }
 
         # Clear semantic cache for this KB since new data is being added
@@ -226,6 +233,7 @@ class Pipeline:
             "files": total_files,
             "chunks": total_chunks,
             "duplicates": total_duplicates,
+            "failed": total_failed,
         }
 
     def search(
@@ -245,6 +253,9 @@ class Pipeline:
             List of result dicts with content, metadata, scores.
         """
         # Load BM25 index for this KB
+        index_path = self.bm25.index_dir / kb_name / "bm25.pkl"
+        if not index_path.exists():
+            return []
         if not self.bm25.load(kb_name):
             return []
 
@@ -279,10 +290,19 @@ class Pipeline:
         start_time = time.time()
 
         # Load BM25 index for this KB
+        index_path = self.bm25.index_dir / kb_name / "bm25.pkl"
+        if not index_path.exists():
+            latency = (time.time() - start_time) * 1000
+            return RAGResponse(
+                answer="知识库为空，请先导入文档。",
+                sources=[],
+                hallucination_risk="low",
+                latency_ms=latency,
+            )
         if not self.bm25.load(kb_name):
             latency = (time.time() - start_time) * 1000
             return RAGResponse(
-                answer="抱歉，BM25 索引加载失败，请尝试重新导入文档。",
+                answer="抱歉，BM25 索引损坏，请尝试重新导入文档。",
                 sources=[],
                 hallucination_risk="low",
                 latency_ms=latency,
@@ -373,10 +393,23 @@ class Pipeline:
         start_time = time.time()
 
         # Load BM25 index
+        index_path = self.bm25.index_dir / kb_name / "bm25.pkl"
+        if not index_path.exists():
+            yield {
+                "type": "answer",
+                "content": "知识库为空，请先导入文档。",
+            }
+            yield {"type": "sources", "sources": []}
+            yield {
+                "type": "done",
+                "hallucination_risk": "low",
+                "latency_ms": (time.time() - start_time) * 1000,
+            }
+            return
         if not self.bm25.load(kb_name):
             yield {
                 "type": "answer",
-                "content": "抱歉，BM25 索引加载失败，请尝试重新导入文档。",
+                "content": "抱歉，BM25 索引损坏，请尝试重新导入文档。",
             }
             yield {"type": "sources", "sources": []}
             yield {

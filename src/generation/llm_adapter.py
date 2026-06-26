@@ -31,6 +31,9 @@ class LLMAdapter:
         self.max_retries = max_retries
         self.backoff_seconds = backoff_seconds
 
+        if max_retries < 1:
+            raise ValueError("max_retries must be at least 1")
+
         self._client: httpx.AsyncClient | None = None
         self._oauth_token: str | None = None
         self._oauth_token_expiry: float = 0.0
@@ -92,9 +95,6 @@ class LLMAdapter:
             "stream": stream,
         }
 
-        if self.max_retries < 1:
-            raise ValueError("max_retries must be at least 1")
-
         for attempt in range(self.max_retries):
             try:
                 auth_headers = await self._get_auth_headers()
@@ -132,21 +132,24 @@ class LLMAdapter:
             messages, stream=True, temperature=temperature, max_tokens=max_tokens
         )
 
-        async for line in response.aiter_lines():
-            if line.startswith("data: "):
-                data = line[6:]
-                if data == "[DONE]":
-                    break
-                try:
-                    chunk = json.loads(data)
-                    choices = chunk.get("choices", [])
-                    if choices:
-                        delta = choices[0].get("delta", {})
-                        content = delta.get("content", "")
-                        if content:
-                            yield content
-                except json.JSONDecodeError:
-                    continue
+        try:
+            async for line in response.aiter_lines():
+                if line.startswith("data: "):
+                    data = line[6:]
+                    if data == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data)
+                        choices = chunk.get("choices", [])
+                        if choices:
+                            delta = choices[0].get("delta", {})
+                            content = delta.get("content", "")
+                            if content:
+                                yield content
+                    except json.JSONDecodeError:
+                        continue
+        finally:
+            await response.aclose()
 
     async def chat(
         self,
@@ -165,6 +168,8 @@ class LLMAdapter:
             raise RuntimeError(
                 f"Unexpected LLM response format: {e}"
             ) from e
+        finally:
+            await response.aclose()
 
     async def close(self):
         """Close the HTTP client."""

@@ -150,6 +150,8 @@ async def _do_chat(pipeline, query, kb_name, provider_name, chat_history, last_s
 
             chat_history.append({"role": "user", "content": query})
             chat_history.append({"role": "assistant", "content": full_answer})
+    except KeyboardInterrupt:
+        click.echo("\n⏸️  已取消")
     except Exception as e:
         click.echo(f"\n❌ 对话出错: {e}")
         # Don't add failed query to history

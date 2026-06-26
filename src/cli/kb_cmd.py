@@ -80,10 +80,7 @@ def kb_use(name: str):
 
     NAME: 知识库名称。
     """
-    import re
-    import tempfile
-    import shutil
-    from pathlib import Path
+    from ruamel.yaml import YAML
 
     from src.config.loader import get_project_root
 
@@ -92,18 +89,16 @@ def kb_use(name: str):
         click.echo(f"❌ 知识库 '{name}' 不存在")
         return
 
-    # Update config.yaml preserving comments and formatting
     config_path = get_project_root() / "config.yaml"
+    yaml = YAML()
+    yaml.preserve_quotes = True
     with open(config_path, "r") as f:
-        content = f.read()
+        config_data = yaml.load(f)
 
-    new_content = re.sub(r"(\n\s*kb:\s*)(?:\"|\')?(\S+)(?:\"|\')?", lambda m: m.group(1) + name, content, count=1)
-    if new_content == content:
-        click.echo(f"❌ 无法更新配置文件，未找到 'kb:' 字段")
-        return
-    with tempfile.NamedTemporaryFile("w", dir=config_path.parent, delete=False, encoding="utf-8") as tf:
-        tf.write(new_content)
-    shutil.move(tf.name, config_path)
+    config_data["defaults"]["kb"] = name
+
+    with open(config_path, "w") as f:
+        yaml.dump(config_data, f)
 
     click.echo(f"✅ 默认知识库已切换为 '{name}'")
 
@@ -172,10 +167,7 @@ def provider_use(name: str):
 
     NAME: 提供商名称 (qwen/glm/deepseek/hunyuan/ernie)。
     """
-    import re
-    import tempfile
-    import shutil
-    from pathlib import Path
+    from ruamel.yaml import YAML
 
     from src.config.loader import get_project_root
 
@@ -185,15 +177,14 @@ def provider_use(name: str):
         return
 
     config_path = get_project_root() / "config.yaml"
+    yaml = YAML()
+    yaml.preserve_quotes = True
     with open(config_path, "r") as f:
-        content = f.read()
+        config_data = yaml.load(f)
 
-    new_content = re.sub(r"(\n\s*provider:\s*)(?:\"|\')?(\S+)(?:\"|\')?", lambda m: m.group(1) + name, content, count=1)
-    if new_content == content:
-        click.echo(f"❌ 无法更新配置文件，未找到 'provider:' 字段")
-        return
-    with tempfile.NamedTemporaryFile("w", dir=config_path.parent, delete=False, encoding="utf-8") as tf:
-        tf.write(new_content)
-    shutil.move(tf.name, config_path)
+    config_data["defaults"]["provider"] = name
+
+    with open(config_path, "w") as f:
+        yaml.dump(config_data, f)
 
     click.echo(f"✅ 默认 LLM 已切换为 '{name}' ({config.llm.providers[name].name})")

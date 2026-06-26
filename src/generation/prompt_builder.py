@@ -74,9 +74,13 @@ def build_messages(
 
     messages = [{"role": "system", "content": system_prompt}]
 
-    # Keep only the last 3 rounds (6 messages) of chat history
+    # Keep only the last 3 rounds (6 messages) of chat history,
+    # ensuring the first message is always a user role for API compatibility.
     if chat_history:
-        messages.extend(chat_history[-6:])
+        truncated = chat_history[-6:]
+        if truncated and truncated[0]["role"] == "assistant":
+            truncated = truncated[1:]
+        messages.extend(truncated)
 
     messages.append({"role": "user", "content": query})
     return messages

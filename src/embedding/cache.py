@@ -22,6 +22,7 @@ class EmbeddingCache:
         self.max_entries = max_entries
         self._index_path = self.cache_dir / "index.json"
         self._index: dict[str, dict] = self._load_index()
+        self._dirty_since_save: int = 0
 
     def _load_index(self) -> dict[str, dict]:
         if self._index_path.exists():
@@ -33,7 +34,27 @@ class EmbeddingCache:
                 logging.getLogger(__name__).warning(
                     "Embedding cache index corrupted, rebuilding from disk."
                 )
-        return {}
+        # Recover orphaned .npy files not in the index
+        return self._recover_orphans()
+
+    def _recover_orphans(self) -> dict[str, dict]:
+        """Scan cache directory for orphaned .npy files and rebuild minimal index."""
+        recovered = {}
+        for npy_file in self.cache_dir.glob("*.npy"):
+            key = npy_file.stem
+            if len(key) == 32:  # MD5 hex digest
+                recovered[key] = {
+                    "text_hash": "",
+                    "model_name": "",
+                    "model_revision": "",
+                    "last_access": npy_file.stat().st_mtime,
+                }
+        if recovered:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Recovered %d orphaned cache entries.", len(recovered)
+            )
+        return recovered
 
     def _save_index(self):
         with open(self._index_path, "w") as f:
@@ -58,8 +79,12 @@ class EmbeddingCache:
         cache_path = self._cache_path(key)
 
         if key in self._index and cache_path.exists():
-            # Update access time for LRU (in-memory only; persist on write)
+            # Update access time for LRU
             self._index[key]["last_access"] = _now()
+            self._dirty_since_save += 1
+            if self._dirty_since_save >= 100:
+                self._save_index()
+                self._dirty_since_save = 0
             try:
                 return np.load(cache_path)
             except (ValueError, OSError):
@@ -97,7 +122,16 @@ class EmbeddingCache:
         if len(self._index) > self.max_entries:
             self._evict()
 
-        self._save_index()
+        self._dirty_since_save += 1
+        if self._dirty_since_save >= 100:
+            self._save_index()
+            self._dirty_since_save = 0
+
+    def flush(self):
+        """Persist the index to disk immediately."""
+        if self._dirty_since_save > 0:
+            self._save_index()
+            self._dirty_since_save = 0
 
     def _evict(self):
         """Evict the least recently used entry."""

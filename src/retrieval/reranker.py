@@ -27,6 +27,7 @@ class Reranker:
             self._model = FlagReranker(
                 self.model_name,
                 use_fp16=True,
+                revision=self.model_revision,
             )
         return self._model
 

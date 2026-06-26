@@ -45,6 +45,9 @@ def import_cmd(path: str, kb_name: str, recursive: bool, dry_run: bool):
             dry_run=dry_run,
             progress_callback=progress,
         )
+    except KeyboardInterrupt:
+        click.echo("\n\n⏸️  已取消")
+        return
     except Exception as e:
         _handle_import_error(e)
         return
@@ -57,6 +60,8 @@ def import_cmd(path: str, kb_name: str, recursive: bool, dry_run: bool):
         click.echo(f"   分块: {result['chunks']} 个")
         if result['duplicates'] > 0:
             click.echo(f"   去重: {result['duplicates']} 个重复块已跳过")
+        if result.get('failed', 0) > 0:
+            click.echo(f"   ⚠️  {result['failed']} 个文件解析失败")
 
 
 def _handle_import_error(e: Exception):

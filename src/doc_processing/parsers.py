@@ -97,7 +97,10 @@ def parse_html(file_path: Path) -> str:
     from bs4 import BeautifulSoup
 
     html = file_path.read_text(encoding="utf-8", errors="replace")
-    soup = BeautifulSoup(html, "lxml")
+    try:
+        soup = BeautifulSoup(html, "lxml")
+    except Exception:
+        soup = BeautifulSoup(html, "html.parser")
 
     # Remove non-content elements
     for tag in soup.find_all(["script", "style", "nav", "footer", "header", "aside"]):

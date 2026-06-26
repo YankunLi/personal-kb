@@ -21,12 +21,15 @@ def search_cmd(query: str, kb_name: str, top_k: int, show_scores: bool):
 
     try:
         results = pipeline.search(query, kb_name=kb_name, top_k=top_k)
+    except KeyboardInterrupt:
+        click.echo("\n⏸️  已取消")
+        return
     except Exception as e:
         click.echo(f"❌ 搜索失败: {e}")
         return
 
     if not results:
-        click.echo("未找到相关结果。")
+        click.echo("未找到相关结果。如果知识库为空，请先使用 'kb import' 导入文档。")
         return
 
     for i, result in enumerate(results, 1):

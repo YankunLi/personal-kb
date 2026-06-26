@@ -29,8 +29,12 @@ class ChromaStore:
 
     def collection_name(self, kb_name: str) -> str:
         """Convert KB name to a valid ChromaDB collection name."""
+        import hashlib
         # ChromaDB collection names must be 3-512 chars, alphanumeric + . _ -
         # Must start and end with alphanumeric.
+        # Append a hash of the original name to prevent collisions between
+        # names that differ only in non-allowed characters.
+        name_hash = hashlib.md5(kb_name.encode()).hexdigest()[:8]
         safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in kb_name)
         safe = safe.strip("_-.")
         if not safe:
@@ -41,7 +45,7 @@ class ChromaStore:
         # Ensure ends with alphanumeric
         if not safe[-1].isalnum():
             safe = safe + "0"
-        return f"kb_{safe}"
+        return f"kb_{safe}_{name_hash}"
 
     def _collection_name(self, kb_name: str) -> str:
         """Backward-compatible alias for collection_name."""
@@ -60,7 +64,7 @@ class ChromaStore:
         name = self._collection_name(kb_name)
         try:
             self._client.delete_collection(name)
-        except Exception:
+        except ValueError:
             pass  # Collection doesn't exist or already deleted
 
     def copy_collection(self, source_kb: str, target_kb: str, batch_size: int = 1000):
@@ -213,7 +217,8 @@ class ChromaStore:
                     if h:
                         hashes.add(h)
             return hashes
-        except Exception:
+        except ValueError:
+            # Collection doesn't exist yet (e.g., new KB)
             return set()
 
     def count(self, kb_name: str) -> int:
@@ -237,7 +242,12 @@ class ChromaStore:
     def list_collections(self) -> list[str]:
         """List all knowledge base collection names."""
         collections = self._client.list_collections()
-        return [c.name.replace("kb_", "", 1) for c in collections if c.name.startswith("kb_")]
+        # New format: kb_{safe}_{hash}, old format: kb_{safe}
+        result = []
+        for c in collections:
+            if c.name.startswith("kb_"):
+                result.append(c.name)
+        return result
 
 
 def _sanitize_metadata(metadata: dict[str, Any]) -> dict[str, Any]:

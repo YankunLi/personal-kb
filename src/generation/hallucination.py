@@ -82,12 +82,14 @@ def detect_hallucination(
         if number_ratio < 0.5:
             return True, number_ratio
 
-    return False, 1.0
+    return False, -1.0  # Unable to assess: no entities or numbers in answer
 
 
 def get_hallucination_risk_level(overlap_ratio: float) -> str:
     """Convert overlap ratio to a risk level string."""
-    if overlap_ratio >= 0.9:
+    if overlap_ratio < 0:
+        return "unknown"  # Unable to assess
+    elif overlap_ratio >= 0.9:
         return "low"
     elif overlap_ratio >= 0.7:
         return "medium"

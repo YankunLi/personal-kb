@@ -74,7 +74,7 @@ def load_documents(
     path: Path,
     recursive: bool = True,
     progress_callback=None,
-) -> Iterator[dict]:
+) -> tuple[Iterator[dict], list[int]]:
     """Load all documents from a path, yielding parsed and cleaned results.
 
     Args:
@@ -82,17 +82,22 @@ def load_documents(
         recursive: If True, recurse into subdirectories.
         progress_callback: Optional callback(file_path, index, total) for progress.
 
-    Yields:
-        Dict with keys: 'file_path', 'file_type', 'text', 'file_name'.
+    Returns:
+        Tuple of (iterator over parsed docs, count of failed files).
     """
     files = discover_files(path, recursive=recursive)
     total = len(files)
+    failed = [0]  # Use list for mutable closure capture
 
-    for i, file_path in enumerate(files):
-        if progress_callback:
-            progress_callback(file_path, i, total)
-        try:
-            yield load_document(file_path)
-        except Exception as e:
-            logger.warning("Failed to parse %s: %s", file_path.name, e)
-            continue
+    def _iter():
+        for i, file_path in enumerate(files):
+            if progress_callback:
+                progress_callback(file_path, i, total)
+            try:
+                yield load_document(file_path)
+            except Exception as e:
+                logger.warning("Failed to parse %s: %s", file_path.name, e)
+                failed[0] += 1
+                continue
+
+    return _iter(), failed

@@ -60,6 +60,8 @@ class KBManager:
         """
         if name in self._registry:
             raise ValueError(f"Knowledge base '{name}' already exists")
+        if not name or not name.strip():
+            raise ValueError("Knowledge base name cannot be empty or whitespace")
 
         info = KBInfo(name=name, topic=topic)
 
@@ -160,7 +162,7 @@ class KBManager:
                 import shutil
                 shutil.copy2(old_bm25, new_bm25_dir / "bm25.pkl")
             bm25_copied = True
-        except Exception:
+        except Exception as e:
             # Rollback: clean up any partially copied data
             if chroma_copied:
                 self.chroma.delete_collection(new_name)
@@ -168,7 +170,7 @@ class KBManager:
                 new_bm25_dir = self.bm25.index_dir / new_name
                 import shutil
                 shutil.rmtree(new_bm25_dir, ignore_errors=True)
-            raise RuntimeError(f"Failed to rename '{old_name}' to '{new_name}'") from None
+            raise RuntimeError(f"Failed to rename '{old_name}' to '{new_name}'") from e
 
         # Phase 2: Delete old data (only after copies are confirmed)
         self.chroma.delete_collection(old_name)
