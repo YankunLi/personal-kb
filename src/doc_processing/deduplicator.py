@@ -57,6 +57,7 @@ class ChunkDeduplicator:
             Tuple of (deduplicated_chunks, duplicate_count).
         """
         if existing_hashes:
+            self.reset()
             self._seen_hashes.update(existing_hashes)
 
         unique = []

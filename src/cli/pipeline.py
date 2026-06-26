@@ -125,6 +125,7 @@ class Pipeline:
         total_files = 0
         total_chunks = 0
         total_duplicates = 0
+        files_with_new_chunks = 0
         all_chunks = []
 
         for doc in load_documents(path, recursive=recursive):
@@ -158,9 +159,13 @@ class Pipeline:
             chunks = enrich_chunks(chunks, base_meta)
 
             # Deduplicate
+            chunks_before = len(chunks)
             if self.config.chunking.enable_deduplication:
                 chunks, dups = self.deduplicator.deduplicate(chunks, existing_hashes)
                 total_duplicates += dups
+
+            if len(chunks) > 0:
+                files_with_new_chunks += 1
 
             total_chunks += len(chunks)
             all_chunks.extend(chunks)
@@ -204,7 +209,7 @@ class Pipeline:
         self.kb_manager.update_stats(
             kb_name,
             chunk_count=new_chunk_count,
-            file_count=existing.file_count + total_files,
+            file_count=existing.file_count + files_with_new_chunks,
         )
 
         return {

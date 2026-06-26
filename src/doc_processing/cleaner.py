@@ -35,8 +35,11 @@ def normalize_text(text: str) -> str:
     # Unicode NFC normalization
     text = unicodedata.normalize("NFC", text)
 
+    # Normalize Unicode line/paragraph separators to newlines
+    text = text.replace("\u2028", "\n").replace("\u2029", "\n")
+
     # Remove zero-width characters and control characters (except newline/tab)
-    text = re.sub(r"[\u200b-\u200f\u2028-\u202f\u2060-\u206f\uFEFF]", "", text)
+    text = re.sub(r"[\u200b-\u200f\u202a-\u202f\u2060-\u206f\uFEFF]", "", text)
     text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", text)
 
     # Normalize line endings

@@ -97,7 +97,7 @@ def kb_use(name: str):
     with open(config_path, "r") as f:
         content = f.read()
 
-    content = re.sub(r"(\n\s*kb:\s*)(?:\"|\')?(\S+)(?:\"|\')?", rf"\1{name}", content)
+    content = re.sub(r"(\n\s*kb:\s*)(?:\"|\')?(\S+)(?:\"|\')?", lambda m: m.group(1) + name, content)
     with tempfile.NamedTemporaryFile("w", dir=config_path.parent, delete=False, encoding="utf-8") as tf:
         tf.write(content)
     shutil.move(tf.name, config_path)
@@ -185,7 +185,7 @@ def provider_use(name: str):
     with open(config_path, "r") as f:
         content = f.read()
 
-    content = re.sub(r"(\n\s*provider:\s*)(?:\"|\')?(\S+)(?:\"|\')?", rf"\1{name}", content)
+    content = re.sub(r"(\n\s*provider:\s*)(?:\"|\')?(\S+)(?:\"|\')?", lambda m: m.group(1) + name, content)
     with tempfile.NamedTemporaryFile("w", dir=config_path.parent, delete=False, encoding="utf-8") as tf:
         tf.write(content)
     shutil.move(tf.name, config_path)
