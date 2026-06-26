@@ -118,9 +118,11 @@ class Pipeline:
         if not self.kb_manager.exists(kb_name):
             self.kb_manager.create(kb_name)
 
-        # Load existing hashes for cross-batch dedup
+        # Load existing hashes for cross-batch dedup and seed deduplicator once
         existing_hashes = self.chroma.get_existing_hashes(kb_name)
         self.deduplicator.reset()
+        if existing_hashes:
+            self.deduplicator._seen_hashes.update(existing_hashes)
 
         total_files = 0
         total_chunks = 0
@@ -161,7 +163,7 @@ class Pipeline:
             # Deduplicate
             chunks_before = len(chunks)
             if self.config.chunking.enable_deduplication:
-                chunks, dups = self.deduplicator.deduplicate(chunks, existing_hashes)
+                chunks, dups = self.deduplicator.deduplicate(chunks)
                 total_duplicates += dups
 
             if len(chunks) > 0:

@@ -35,8 +35,11 @@ class LLMAdapter:
     @property
     def client(self) -> httpx.AsyncClient:
         if self._client is None:
+            base_url = self.provider.base_url
+            if not base_url.endswith("/"):
+                base_url += "/"
             self._client = httpx.AsyncClient(
-                base_url=self.provider.base_url,
+                base_url=base_url,
                 headers={
                     "Authorization": f"Bearer {self.provider.api_key}",
                     "Content-Type": "application/json",
@@ -67,7 +70,7 @@ class LLMAdapter:
         for attempt in range(self.max_retries):
             try:
                 response = await self.client.post(
-                    "/v1/chat/completions",
+                    "chat/completions",
                     json=payload,
                 )
                 response.raise_for_status()
