@@ -59,6 +59,11 @@ class Reranker:
         if isinstance(scores, float):
             scores = [scores]
 
+        if len(scores) != len(documents):
+            raise RuntimeError(
+                f"Reranker returned {len(scores)} scores for {len(documents)} documents"
+            )
+
         # Attach reranker scores
         for doc, score in zip(documents, scores):
             doc["rerank_score"] = float(score)

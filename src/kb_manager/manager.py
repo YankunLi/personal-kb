@@ -130,7 +130,8 @@ class KBManager:
         """Rename a knowledge base.
 
         Copies ChromaDB collection data and BM25 index to the new name,
-        then deletes the old data.
+        then deletes the old data.Atomic: old data is only deleted after
+        all copies succeed.
 
         Raises:
             ValueError: If old_name doesn't exist or new_name already exists.
@@ -140,24 +141,40 @@ class KBManager:
         if new_name in self._registry:
             raise ValueError(f"Knowledge base '{new_name}' already exists")
 
-        # Copy ChromaDB data using public API (batched to avoid OOM)
+        # Phase 1: Copy all data to new name
+        chroma_copied = False
+        bm25_copied = False
         try:
-            self.chroma.copy_collection(old_name, new_name)
-        except ValueError:
-            # Source collection has no data yet, just ensure target exists
-            self.chroma.get_or_create_collection(new_name)
+            try:
+                self.chroma.copy_collection(old_name, new_name)
+            except ValueError:
+                # Source collection has no data yet, just ensure target exists
+                self.chroma.get_or_create_collection(new_name)
+            chroma_copied = True
+
+            # Copy BM25 index
+            old_bm25 = self.bm25.index_dir / old_name / "bm25.pkl"
+            if old_bm25.exists():
+                new_bm25_dir = self.bm25.index_dir / new_name
+                new_bm25_dir.mkdir(parents=True, exist_ok=True)
+                import shutil
+                shutil.copy2(old_bm25, new_bm25_dir / "bm25.pkl")
+            bm25_copied = True
+        except Exception:
+            # Rollback: clean up any partially copied data
+            if chroma_copied:
+                self.chroma.delete_collection(new_name)
+            if bm25_copied:
+                new_bm25_dir = self.bm25.index_dir / new_name
+                import shutil
+                shutil.rmtree(new_bm25_dir, ignore_errors=True)
+            raise RuntimeError(f"Failed to rename '{old_name}' to '{new_name}'") from None
+
+        # Phase 2: Delete old data (only after copies are confirmed)
         self.chroma.delete_collection(old_name)
+        self.bm25.delete(old_name)
 
-        # Copy BM25 index
-        old_bm25 = self.bm25.index_dir / old_name / "bm25.pkl"
-        if old_bm25.exists():
-            new_bm25_dir = self.bm25.index_dir / new_name
-            new_bm25_dir.mkdir(parents=True, exist_ok=True)
-            import shutil
-            shutil.copy2(old_bm25, new_bm25_dir / "bm25.pkl")
-            self.bm25.delete(old_name)
-
-        # Update registry
+        # Phase 3: Update registry
         info = self._registry.pop(old_name)
         info.name = new_name
         self._registry[new_name] = info

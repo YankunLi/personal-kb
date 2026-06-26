@@ -80,6 +80,9 @@ class BM25Index:
         if self._bm25 is None or not self._corpus:
             return []
 
+        if not query or not query.strip():
+            return []
+
         tokenized_query = self._tokenize(query)
         scores = self._bm25.get_scores(tokenized_query)
 

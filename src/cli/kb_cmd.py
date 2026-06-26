@@ -97,9 +97,12 @@ def kb_use(name: str):
     with open(config_path, "r") as f:
         content = f.read()
 
-    content = re.sub(r"(\n\s*kb:\s*)(?:\"|\')?(\S+)(?:\"|\')?", lambda m: m.group(1) + name, content, count=1)
+    new_content = re.sub(r"(\n\s*kb:\s*)(?:\"|\')?(\S+)(?:\"|\')?", lambda m: m.group(1) + name, content, count=1)
+    if new_content == content:
+        click.echo(f"❌ 无法更新配置文件，未找到 'kb:' 字段")
+        return
     with tempfile.NamedTemporaryFile("w", dir=config_path.parent, delete=False, encoding="utf-8") as tf:
-        tf.write(content)
+        tf.write(new_content)
     shutil.move(tf.name, config_path)
 
     click.echo(f"✅ 默认知识库已切换为 '{name}'")
@@ -185,9 +188,12 @@ def provider_use(name: str):
     with open(config_path, "r") as f:
         content = f.read()
 
-    content = re.sub(r"(\n\s*provider:\s*)(?:\"|\')?(\S+)(?:\"|\')?", lambda m: m.group(1) + name, content, count=1)
+    new_content = re.sub(r"(\n\s*provider:\s*)(?:\"|\')?(\S+)(?:\"|\')?", lambda m: m.group(1) + name, content, count=1)
+    if new_content == content:
+        click.echo(f"❌ 无法更新配置文件，未找到 'provider:' 字段")
+        return
     with tempfile.NamedTemporaryFile("w", dir=config_path.parent, delete=False, encoding="utf-8") as tf:
-        tf.write(content)
+        tf.write(new_content)
     shutil.move(tf.name, config_path)
 
     click.echo(f"✅ 默认 LLM 已切换为 '{name}' ({config.llm.providers[name].name})")

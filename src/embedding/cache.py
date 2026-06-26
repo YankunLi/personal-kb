@@ -58,9 +58,8 @@ class EmbeddingCache:
         cache_path = self._cache_path(key)
 
         if key in self._index and cache_path.exists():
-            # Update access time for LRU
+            # Update access time for LRU (in-memory only; persist on write)
             self._index[key]["last_access"] = _now()
-            self._save_index()
             try:
                 return np.load(cache_path)
             except (ValueError, OSError):
@@ -70,6 +69,7 @@ class EmbeddingCache:
                 )
                 cache_path.unlink(missing_ok=True)
                 del self._index[key]
+                self._save_index()
                 return None
 
         return None

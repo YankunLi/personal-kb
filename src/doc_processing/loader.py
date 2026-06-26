@@ -1,11 +1,14 @@
 """File discovery and format dispatch for document loading."""
 
+import logging
 import os
 from pathlib import Path
 from typing import Iterator
 
 from .parsers import PARSER_REGISTRY, parse_file
 from .cleaner import clean_text
+
+logger = logging.getLogger(__name__)
 
 
 SUPPORTED_EXTENSIONS = set(PARSER_REGISTRY.keys())
@@ -91,5 +94,5 @@ def load_documents(
         try:
             yield load_document(file_path)
         except Exception as e:
-            print(f"Warning: Failed to parse {file_path.name}: {e}")
+            logger.warning("Failed to parse %s: %s", file_path.name, e)
             continue
