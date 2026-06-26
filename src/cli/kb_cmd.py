@@ -80,7 +80,7 @@ def kb_use(name: str):
 
     NAME: 知识库名称。
     """
-    import yaml
+    import re
     from pathlib import Path
 
     pipeline = get_pipeline()
@@ -88,14 +88,14 @@ def kb_use(name: str):
         click.echo(f"❌ 知识库 '{name}' 不存在")
         return
 
-    # Update config.yaml
+    # Update config.yaml preserving comments and formatting
     config_path = Path("config.yaml")
     with open(config_path, "r") as f:
-        config_data = yaml.safe_load(f)
+        content = f.read()
 
-    config_data["defaults"]["kb"] = name
+    content = re.sub(r"(\n\s*kb:\s*)\S+", rf"\1{name}", content)
     with open(config_path, "w") as f:
-        yaml.dump(config_data, f, allow_unicode=True, default_flow_style=False)
+        f.write(content)
 
     click.echo(f"✅ 默认知识库已切换为 '{name}'")
 
@@ -164,7 +164,7 @@ def provider_use(name: str):
 
     NAME: 提供商名称 (qwen/glm/deepseek/hunyuan/ernie)。
     """
-    import yaml
+    import re
     from pathlib import Path
 
     config = load_config()
@@ -174,10 +174,10 @@ def provider_use(name: str):
 
     config_path = Path("config.yaml")
     with open(config_path, "r") as f:
-        config_data = yaml.safe_load(f)
+        content = f.read()
 
-    config_data["defaults"]["provider"] = name
+    content = re.sub(r"(\n\s*provider:\s*)\S+", rf"\1{name}", content)
     with open(config_path, "w") as f:
-        yaml.dump(config_data, f, allow_unicode=True, default_flow_style=False)
+        f.write(content)
 
     click.echo(f"✅ 默认 LLM 已切换为 '{name}' ({config.llm.providers[name].name})")

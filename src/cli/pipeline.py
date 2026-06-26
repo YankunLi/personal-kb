@@ -203,10 +203,11 @@ class Pipeline:
         self.bm25.save(kb_name)
 
         # Update KB stats
+        existing = self.kb_manager.get(kb_name)
         self.kb_manager.update_stats(
             kb_name,
             chunk_count=self.chroma.count(kb_name),
-            file_count=total_files,
+            file_count=existing.file_count + total_files,
         )
 
         return {
@@ -300,14 +301,15 @@ class Pipeline:
 
         # Generate
         llm = self._get_llm_adapter(provider_name)
-        if stream:
-            answer = ""
-            async for token in llm.chat_stream(messages):
-                answer += token
-        else:
-            answer = await llm.chat(messages)
-
-        await llm.close()
+        try:
+            if stream:
+                answer = ""
+                async for token in llm.chat_stream(messages):
+                    answer += token
+            else:
+                answer = await llm.chat(messages)
+        finally:
+            await llm.close()
 
         # Hallucination check
         is_risk, overlap = detect_hallucination(
@@ -350,6 +352,20 @@ class Pipeline:
         # Load BM25 index
         self.bm25.load(kb_name)
 
+        # Check semantic cache
+        if self.config.retrieval.semantic_cache["enabled"]:
+            query_emb = self.embedder.encode_query(query)
+            cached = self.semantic_cache.get(query_emb)
+            if cached:
+                yield {"type": "answer", "content": cached["answer"]}
+                yield {"type": "sources", "sources": cached["sources"]}
+                yield {
+                    "type": "done",
+                    "hallucination_risk": "low",
+                    "latency_ms": 0,
+                }
+                return
+
         # Hybrid search
         results = self.retriever.retrieve(kb_name, query)
 
@@ -386,6 +402,11 @@ class Pipeline:
 
         # Extract sources
         sources = extract_sources_from_contexts(results)
+
+        # Update semantic cache
+        if self.config.retrieval.semantic_cache["enabled"]:
+            query_emb = self.embedder.encode_query(query)
+            self.semantic_cache.set(query_emb, full_answer, sources)
 
         yield {"type": "sources", "sources": sources}
         yield {

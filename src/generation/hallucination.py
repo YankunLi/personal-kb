@@ -54,8 +54,6 @@ def detect_hallucination(
     answer_entities = extract_entities(answer)
     if answer_entities:
         context_entities = extract_entities(context_text)
-        if not answer_entities:
-            return False, 1.0
         matched = answer_entities & context_entities
         overlap = len(matched) / len(answer_entities)
         if overlap < entity_overlap_threshold:

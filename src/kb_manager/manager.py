@@ -128,6 +128,9 @@ class KBManager:
     def rename(self, old_name: str, new_name: str):
         """Rename a knowledge base.
 
+        Copies ChromaDB collection data and BM25 index to the new name,
+        then deletes the old data.
+
         Raises:
             ValueError: If old_name doesn't exist or new_name already exists.
         """
@@ -136,6 +139,40 @@ class KBManager:
         if new_name in self._registry:
             raise ValueError(f"Knowledge base '{new_name}' already exists")
 
+        # Copy ChromaDB data: get all chunks from old collection,
+        # add them to a new collection, then delete the old.
+        old_collection = self.chroma._collection_name(old_name)
+        new_collection = self.chroma._collection_name(new_name)
+
+        try:
+            old_data = self.chroma._client.get_collection(old_collection).get(
+                include=["documents", "metadatas", "embeddings"]
+            )
+            if old_data["ids"]:
+                self.chroma._client.get_or_create_collection(
+                    name=new_collection,
+                    metadata={"hnsw:space": "cosine"},
+                ).add(
+                    ids=old_data["ids"],
+                    documents=old_data["documents"] or [],
+                    metadatas=old_data["metadatas"] or [],
+                    embeddings=old_data["embeddings"] or [],
+                )
+            self.chroma.delete_collection(old_name)
+        except Exception:
+            # Old collection doesn't exist (no data yet), just ensure new exists
+            self.chroma.get_or_create_collection(new_name)
+
+        # Copy BM25 index
+        old_bm25 = self.bm25.index_dir / old_name / "bm25.pkl"
+        if old_bm25.exists():
+            new_bm25_dir = self.bm25.index_dir / new_name
+            new_bm25_dir.mkdir(parents=True, exist_ok=True)
+            import shutil
+            shutil.copy2(old_bm25, new_bm25_dir / "bm25.pkl")
+            self.bm25.delete(old_name)
+
+        # Update registry
         info = self._registry.pop(old_name)
         info.name = new_name
         self._registry[new_name] = info
