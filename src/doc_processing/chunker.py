@@ -98,4 +98,9 @@ def chunk_document(
             "metadata": chunk_meta,
         })
 
+    # Update total_chunks to reflect actual (non-empty) chunk count
+    actual_total = len(result)
+    for chunk in result:
+        chunk["metadata"]["total_chunks"] = actual_total
+
     return result

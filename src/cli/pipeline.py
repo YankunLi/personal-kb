@@ -428,7 +428,7 @@ class Pipeline:
 
         # Update semantic cache
         if self.config.retrieval.semantic_cache["enabled"]:
-            self.semantic_cache.set(query_emb, full_answer, sources)
+            self.semantic_cache.set(query_emb, full_answer, sources, kb_name=kb_name)
 
         yield {"type": "sources", "sources": sources}
         yield {
