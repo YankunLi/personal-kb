@@ -62,11 +62,12 @@ class KBManager:
             raise ValueError(f"Knowledge base '{name}' already exists")
 
         info = KBInfo(name=name, topic=topic)
+
+        # Ensure ChromaDB collection exists before persisting registry entry
+        self.chroma.get_or_create_collection(name)
+
         self._registry[name] = info
         self._save_registry()
-
-        # Ensure ChromaDB collection exists
-        self.chroma.get_or_create_collection(name)
         return info
 
     def delete(self, name: str, force: bool = False):

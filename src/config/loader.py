@@ -103,34 +103,39 @@ class AppConfig(BaseModel):
 
 _ENV_VAR_RE = re.compile(r"\$\{(\w+)\}")
 
-# Sentinel to track unresolved env vars
-_UNRESOLVED_ENV_VARS: list[str] = []
 
-
-def _interpolate_env_vars(value: Any) -> Any:
+def _interpolate_env_vars(value: Any) -> tuple[Any, list[str]]:
     """Recursively replace ${ENV_VAR} patterns in strings with environment values.
 
-    Logs a warning for any environment variable that is not set.
+    Returns:
+        Tuple of (interpolated_value, list_of_unresolved_var_names).
     """
+    unresolved: list[str] = []
+
     if isinstance(value, str):
         def _replace(m: re.Match) -> str:
             var_name = m.group(1)
             env_val = os.environ.get(var_name)
             if env_val is None:
-                _UNRESOLVED_ENV_VARS.append(var_name)
-                logger.warning(
-                    "Environment variable '%s' is not set; "
-                    "leaving ${%s} as literal value in config.",
-                    var_name, var_name,
-                )
+                unresolved.append(var_name)
                 return m.group(0)
             return env_val
-        return _ENV_VAR_RE.sub(_replace, value)
+        return _ENV_VAR_RE.sub(_replace, value), unresolved
     if isinstance(value, dict):
-        return {k: _interpolate_env_vars(v) for k, v in value.items()}
+        result = {}
+        for k, v in value.items():
+            new_v, uv = _interpolate_env_vars(v)
+            result[k] = new_v
+            unresolved.extend(uv)
+        return result, unresolved
     if isinstance(value, list):
-        return [_interpolate_env_vars(v) for v in value]
-    return value
+        result = []
+        for v in value:
+            new_v, uv = _interpolate_env_vars(v)
+            result.append(new_v)
+            unresolved.extend(uv)
+        return result, unresolved
+    return value, unresolved
 
 
 def load_config(config_path: str | Path = "config.yaml") -> AppConfig:
@@ -156,16 +161,15 @@ def load_config(config_path: str | Path = "config.yaml") -> AppConfig:
     with open(config_path, "r", encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
 
-    raw = _interpolate_env_vars(raw)
+    raw, unresolved = _interpolate_env_vars(raw)
 
     # Warn about unresolved env vars
-    if _UNRESOLVED_ENV_VARS:
+    if unresolved:
         logger.warning(
             "Unresolved environment variables: %s. "
             "LLM calls using these providers will fail with authentication errors.",
-            ", ".join(sorted(set(_UNRESOLVED_ENV_VARS))),
+            ", ".join(sorted(set(unresolved))),
         )
-        _UNRESOLVED_ENV_VARS.clear()
 
     # Flatten provider configs into LLMConfig
     llm_raw = raw.get("llm") or {}

@@ -29,12 +29,10 @@ class EmbeddingCache:
                 with open(self._index_path, "r") as f:
                     return json.load(f)
             except (json.JSONDecodeError, OSError):
-                # Index file corrupted; reset and rebuild from cache directory
                 import logging
                 logging.getLogger(__name__).warning(
                     "Embedding cache index corrupted, rebuilding from disk."
                 )
-                return {}
         return {}
 
     def _save_index(self):
@@ -63,7 +61,16 @@ class EmbeddingCache:
             # Update access time for LRU
             self._index[key]["last_access"] = _now()
             self._save_index()
-            return np.load(cache_path)
+            try:
+                return np.load(cache_path)
+            except (ValueError, OSError):
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Corrupted embedding cache entry: %s", key
+                )
+                cache_path.unlink(missing_ok=True)
+                del self._index[key]
+                return None
 
         return None
 

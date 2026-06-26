@@ -55,6 +55,16 @@ def _extract_page_from_text(text: str) -> int | None:
     return None
 
 
+def _get_score(doc: dict[str, Any]) -> float:
+    """Extract relevance score, handling None values."""
+    score = doc.get("rerank_score")
+    if score is None:
+        score = doc.get("score", 0)
+    if score is None:
+        return 0.0
+    return float(score)
+
+
 def extract_sources_from_contexts(
     contexts: list[dict[str, Any]],
     max_preview_chars: int = 200,
@@ -78,7 +88,7 @@ def extract_sources_from_contexts(
             source_file=metadata.get("source_file_basename", metadata.get("source_file", "未知")),
             section=metadata.get("section"),
             page=metadata.get("page") if metadata.get("page") is not None else _extract_page_from_text(content),
-            relevance_score=doc.get("rerank_score", doc.get("score", 0)),
+            relevance_score=_get_score(doc),
             text_preview=content[:max_preview_chars],
         ))
 

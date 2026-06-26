@@ -85,7 +85,7 @@ def chat_cmd(kb_name: str, provider_name: str, no_stream: bool):
                     click.echo(f"知识库 '{new_kb}' 不存在")
                 continue
             elif cmd.startswith("/provider "):
-                new_prov = query[10:].strip()  # use original query
+                new_prov = query[10:].strip().lower()  # provider keys are lowercase
                 if new_prov in pipeline.config.llm.providers:
                     provider_name = new_prov
                     prov_info = pipeline.config.llm.providers[new_prov]

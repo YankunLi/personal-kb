@@ -55,6 +55,10 @@ class Reranker:
         pairs = [[query, doc["content"]] for doc in documents]
         scores = self.model.compute_score(pairs, normalize=True)
 
+        # compute_score returns a float for single pair, list for multiple
+        if isinstance(scores, float):
+            scores = [scores]
+
         # Attach reranker scores
         for doc, score in zip(documents, scores):
             doc["rerank_score"] = float(score)

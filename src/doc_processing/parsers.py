@@ -4,14 +4,19 @@ import re
 from pathlib import Path
 
 
-def parse_txt(file_path: Path) -> str:
-    """Parse plain text file, trying UTF-8 first, then GBK."""
+def _read_with_fallback(file_path: Path) -> str:
+    """Read a file trying UTF-8 first, then GBK/GB2312."""
     for encoding in ("utf-8", "gbk", "gb2312"):
         try:
             return file_path.read_text(encoding=encoding)
         except (UnicodeDecodeError, UnicodeError):
             continue
-    raise ValueError(f"Cannot decode text file: {file_path}")
+    raise ValueError(f"Cannot decode file: {file_path}")
+
+
+def parse_txt(file_path: Path) -> str:
+    """Parse plain text file, trying UTF-8 first, then GBK."""
+    return _read_with_fallback(file_path)
 
 
 def parse_md(file_path: Path) -> str:
@@ -20,7 +25,7 @@ def parse_md(file_path: Path) -> str:
     from markdown_it import MarkdownIt
 
     md = MarkdownIt()
-    text = file_path.read_text(encoding="utf-8")
+    text = _read_with_fallback(file_path)
 
     # Convert markdown to tokens, then extract text content
     tokens = md.parse(text)
