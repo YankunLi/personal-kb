@@ -54,7 +54,6 @@ class EmbeddingCache:
         if key in self._index and cache_path.exists():
             # Update access time for LRU
             self._index[key]["last_access"] = _now()
-            self._save_index()
             return np.load(cache_path)
 
         return None

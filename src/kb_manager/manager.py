@@ -148,6 +148,10 @@ class KBManager:
             old_data = self.chroma._client.get_collection(old_collection).get(
                 include=["documents", "metadatas", "embeddings"]
             )
+        except Exception:
+            # Old collection doesn't exist (no data yet), just ensure new exists
+            self.chroma.get_or_create_collection(new_name)
+        else:
             if old_data["ids"]:
                 self.chroma._client.get_or_create_collection(
                     name=new_collection,
@@ -159,9 +163,6 @@ class KBManager:
                     embeddings=old_data["embeddings"] or [],
                 )
             self.chroma.delete_collection(old_name)
-        except Exception:
-            # Old collection doesn't exist (no data yet), just ensure new exists
-            self.chroma.get_or_create_collection(new_name)
 
         # Copy BM25 index
         old_bm25 = self.bm25.index_dir / old_name / "bm25.pkl"

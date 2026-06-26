@@ -70,8 +70,8 @@ class LLMAdapter:
                 response.raise_for_status()
                 return response
             except (httpx.HTTPError, httpx.TimeoutException) as e:
-                # Don't retry on permanent client errors (4xx except 429)
-                if isinstance(e, httpx.HTTPStatusError) and e.response.status_code < 500:
+                # Don't retry on permanent client errors (4xx except 429 rate limit)
+                if isinstance(e, httpx.HTTPStatusError) and e.response.status_code < 500 and e.response.status_code != 429:
                     raise
                 if attempt < self.max_retries - 1:
                     wait = self.backoff_seconds * (2 ** attempt)

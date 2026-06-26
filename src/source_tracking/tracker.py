@@ -77,7 +77,7 @@ def extract_sources_from_contexts(
             chunk_id=metadata.get("chunk_id", ""),
             source_file=metadata.get("source_file_basename", metadata.get("source_file", "未知")),
             section=metadata.get("section"),
-            page=metadata.get("page") or _extract_page_from_text(content),
+            page=metadata.get("page") if metadata.get("page") is not None else _extract_page_from_text(content),
             relevance_score=doc.get("rerank_score", doc.get("score", 0)),
             text_preview=content[:max_preview_chars],
         ))

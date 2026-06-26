@@ -200,9 +200,10 @@ class Pipeline:
 
         # Update KB stats
         existing = self.kb_manager.get(kb_name)
+        new_chunk_count = self.chroma.count(kb_name)
         self.kb_manager.update_stats(
             kb_name,
-            chunk_count=self.chroma.count(kb_name),
+            chunk_count=new_chunk_count,
             file_count=existing.file_count + total_files,
         )
 
