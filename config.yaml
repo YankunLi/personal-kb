@@ -11,6 +11,7 @@ chunking:
   chunk_size: 500
   chunk_overlap: 80
   separators:
+    - "\n# "
     - "\n## "
     - "\n### "
     - "\n#### "
@@ -19,6 +20,7 @@ chunking:
     - "."
     - "！"
     - "？"
+    - "；"
     - " "
   enable_deduplication: true
 
@@ -91,6 +93,7 @@ llm:
       base_url: "https://qianfan.baidubce.com/v2"
       model: "ernie-speed-128k"
       api_key: "${ERNIE_API_KEY}"
+      auth_type: "oauth"
 
 # --- Hallucination Detection ---
 hallucination:

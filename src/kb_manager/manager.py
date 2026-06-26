@@ -139,42 +139,13 @@ class KBManager:
         if new_name in self._registry:
             raise ValueError(f"Knowledge base '{new_name}' already exists")
 
-        # Copy ChromaDB data: get all chunks from old collection,
-        # add them to a new collection, then delete the old.
-        old_collection = self.chroma._collection_name(old_name)
-        new_collection = self.chroma._collection_name(new_name)
-
+        # Copy ChromaDB data using public API (batched to avoid OOM)
         try:
-            old_data = self.chroma._client.get_collection(old_collection).get(
-                include=["documents", "metadatas", "embeddings"]
-            )
-        except Exception:
-            # Old collection doesn't exist (no data yet), just ensure new exists
+            self.chroma.copy_collection(old_name, new_name)
+        except ValueError:
+            # Source collection has no data yet, just ensure target exists
             self.chroma.get_or_create_collection(new_name)
-        else:
-            if old_data["ids"]:
-                new_coll = self.chroma._client.get_or_create_collection(
-                    name=new_collection,
-                    metadata={"hnsw:space": "cosine"},
-                )
-                new_coll.add(
-                    ids=old_data["ids"],
-                    documents=old_data["documents"] or [],
-                    metadatas=old_data["metadatas"] or [],
-                    embeddings=old_data["embeddings"] or [],
-                )
-                # Verify copy succeeded before deleting old data
-                if new_coll.count() >= len(old_data["ids"]):
-                    self.chroma.delete_collection(old_name)
-                else:
-                    self.chroma.delete_collection(new_name)
-                    raise RuntimeError(
-                        f"Failed to copy all chunks during rename "
-                        f"(expected {len(old_data['ids'])}, got {new_coll.count()})"
-                    )
-            else:
-                self.chroma.get_or_create_collection(new_name)
-                self.chroma.delete_collection(old_name)
+        self.chroma.delete_collection(old_name)
 
         # Copy BM25 index
         old_bm25 = self.bm25.index_dir / old_name / "bm25.pkl"

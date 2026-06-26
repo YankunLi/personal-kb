@@ -14,6 +14,9 @@ class ChunkDeduplicator:
     Two levels of deduplication:
     1. Intra-batch: within the same import batch
     2. Cross-batch: against previously stored chunks (via content_hash)
+
+    Uses the content_hash from chunk metadata when available (set by the chunker),
+    falling back to computing the hash from content.
     """
 
     def __init__(self):
@@ -23,24 +26,32 @@ class ChunkDeduplicator:
         """Reset the seen hashes set (for a new import batch)."""
         self._seen_hashes.clear()
 
+    def seed_hashes(self, hashes: set[str]):
+        """Pre-seed the deduplicator with existing hashes for cross-batch dedup."""
+        self._seen_hashes.update(hashes)
+
     def compute_hash(self, content: str) -> str:
         """Compute MD5 hash of chunk content."""
         return hashlib.md5(content.encode("utf-8")).hexdigest()
 
-    def is_duplicate(self, content: str) -> bool:
-        """Check if a chunk's content has been seen before.
+    def _get_hash(self, chunk: dict) -> str:
+        """Get the content hash from chunk metadata, or compute it."""
+        meta = chunk.get("metadata", {})
+        h = meta.get("content_hash")
+        if h:
+            return h
+        return self.compute_hash(chunk.get("content", ""))
 
-        Args:
-            content: Chunk text content.
+    def check_and_register(self, content: str) -> bool:
+        """Check if content is new, and register it if so.
 
-        Returns:
-            True if the content hash has been seen before.
+        Returns True if the content is new (not seen before).
         """
         h = self.compute_hash(content)
         if h in self._seen_hashes:
-            return True
+            return False
         self._seen_hashes.add(h)
-        return False
+        return True
 
     def deduplicate(
         self,
@@ -62,10 +73,11 @@ class ChunkDeduplicator:
         unique = []
         duplicates = 0
         for chunk in chunks:
-            content = chunk.get("content", "")
-            if self.is_duplicate(content):
+            h = self._get_hash(chunk)
+            if h in self._seen_hashes:
                 duplicates += 1
             else:
+                self._seen_hashes.add(h)
                 unique.append(chunk)
 
         return unique, duplicates

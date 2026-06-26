@@ -13,10 +13,9 @@ from typing import Any
 def extract_section(text: str) -> str | None:
     """Extract the nearest heading from chunk text as section name.
 
-    Looks for markdown-style headings (# Title) or common patterns.
+    Scans all lines for the first markdown-style heading (# Title).
     """
-    lines = text.strip().split("\n")
-    for line in lines:
+    for line in text.strip().split("\n"):
         line = line.strip()
         if line.startswith("#"):
             # Remove leading # and whitespace

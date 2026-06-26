@@ -85,6 +85,18 @@ def extract_sources_from_contexts(
     return sources
 
 
+CITATION_RE = re.compile(r"\[来源(\d+)\]")
+
+
+def extract_citations(answer: str) -> list[str]:
+    """Extract source citation indices from the answer text.
+
+    Finds patterns like [来源1], [来源2], etc.
+    Returns list of citation strings.
+    """
+    return [f"[来源{m}]" for m in CITATION_RE.findall(answer)]
+
+
 def verify_citations(
     answer: str,
     sources: list[SourceInfo],
@@ -96,14 +108,18 @@ def verify_citations(
         sources: List of source info used for generation.
 
     Returns:
-        Tuple of (all_valid: bool, invalid_citations: list[str]).
+        Tuple of (all_valid: bool, issues: list[str]).
+        If no citations are found, returns (False, ["no_citations"]) to flag
+        that the LLM did not cite any sources.
     """
-    cited = re.findall(r"\[来源(\d+)\]", answer)
+    cited = [int(m) for m in CITATION_RE.findall(answer)]
     max_index = len(sources)
-    invalid = []
 
-    for idx_str in cited:
-        idx = int(idx_str)
+    if not cited:
+        return False, ["no_citations"]
+
+    invalid = []
+    for idx in cited:
         if idx < 1 or idx > max_index:
             invalid.append(f"[来源{idx}]")
 

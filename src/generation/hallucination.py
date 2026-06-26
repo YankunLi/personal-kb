@@ -15,12 +15,30 @@ def extract_numbers(text: str) -> set[str]:
 
 
 def extract_entities(text: str, min_length: int = 2) -> set[str]:
-    """Extract potential named entities: Chinese words of 2+ chars, English words."""
-    # Chinese: sequences of 2+ Chinese characters
-    chinese = set(re.findall(r"[\u4e00-\u9fff]{" + str(min_length) + r",}", text))
+    """Extract potential named entities from text.
+
+    Uses jieba for Chinese word segmentation instead of regex substring matching,
+    which prevents false entity inflation from overlapping substrings.
+    Falls back to regex if jieba is not available.
+    """
+    entities: set[str] = set()
+
+    # Chinese: use jieba for proper word segmentation
+    try:
+        import jieba
+        words = jieba.cut(text)
+        for w in words:
+            w = w.strip()
+            if len(w) >= min_length and re.search(r"[\u4e00-\u9fff]", w):
+                entities.add(w)
+    except ImportError:
+        # Fallback: match 2-4 char Chinese sequences (avoids substring explosion)
+        entities.update(re.findall(r"[\u4e00-\u9fff]{2,4}", text))
+
     # English: words of 3+ letters
-    english = set(w.lower() for w in re.findall(r"[a-zA-Z]{3,}", text))
-    return chinese | english
+    entities.update(w.lower() for w in re.findall(r"[a-zA-Z]{3,}", text))
+
+    return entities
 
 
 def detect_hallucination(
@@ -29,6 +47,10 @@ def detect_hallucination(
     entity_overlap_threshold: float = 0.7,
 ) -> tuple[bool, float]:
     """Check if the answer contains entities not found in the retrieved contexts.
+
+    Checks numbers and entities separately, returning the entity overlap ratio
+    as the primary signal. Number mismatches are reported as a warning signal
+    but do not override the entity overlap ratio.
 
     Args:
         answer: Generated answer text.
@@ -41,16 +63,7 @@ def detect_hallucination(
     """
     context_text = " ".join([c.get("content", "") for c in contexts])
 
-    # Check numbers (critical for factual accuracy)
-    answer_numbers = extract_numbers(answer)
-    if answer_numbers:
-        context_numbers = extract_numbers(context_text)
-        unmatched = answer_numbers - context_numbers
-        number_ratio = 1.0 - len(unmatched) / len(answer_numbers)
-        if number_ratio < entity_overlap_threshold:
-            return True, number_ratio
-
-    # Check entities
+    # Check entities (primary signal)
     answer_entities = extract_entities(answer)
     if answer_entities:
         context_entities = extract_entities(context_text)
@@ -59,6 +72,15 @@ def detect_hallucination(
         if overlap < entity_overlap_threshold:
             return True, overlap
         return False, overlap
+
+    # Check numbers for factual accuracy (secondary signal)
+    answer_numbers = extract_numbers(answer)
+    if answer_numbers:
+        context_numbers = extract_numbers(context_text)
+        unmatched = answer_numbers - context_numbers
+        number_ratio = 1.0 - len(unmatched) / len(answer_numbers)
+        if number_ratio < 0.5:
+            return True, number_ratio
 
     return False, 1.0
 

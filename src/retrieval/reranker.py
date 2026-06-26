@@ -14,8 +14,9 @@ class Reranker:
     Lazily loaded to avoid loading the model if reranking is not used.
     """
 
-    def __init__(self, model_name: str = "BAAI/bge-reranker-v2-m3"):
+    def __init__(self, model_name: str = "BAAI/bge-reranker-v2-m3", model_revision: str = "main"):
         self.model_name = model_name
+        self.model_revision = model_revision
         self._model: Any = None
 
     @property

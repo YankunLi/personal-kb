@@ -70,13 +70,17 @@ def chat_cmd(kb_name: str, provider_name: str, no_stream: bool):
                 continue
             elif cmd == "/clear":
                 chat_history.clear()
-                click.echo("对话历史已清除")
+                last_sources.clear()
+                click.echo("对话历史和来源已清除")
                 continue
             elif cmd.startswith("/kb "):
                 new_kb = cmd[4:].strip()
                 if pipeline.kb_manager.exists(new_kb):
                     kb_name = new_kb
-                    click.echo(f"已切换到知识库: {kb_name}")
+                    chat_history.clear()
+                    last_sources.clear()
+                    kb_info = pipeline.kb_manager.get(kb_name)
+                    click.echo(f"已切换到知识库: {kb_name} ({kb_info.chunk_count} chunks)")
                 else:
                     click.echo(f"知识库 '{new_kb}' 不存在")
                 continue
@@ -102,49 +106,53 @@ def chat_cmd(kb_name: str, provider_name: str, no_stream: bool):
 
 async def _do_chat(pipeline, query, kb_name, provider_name, chat_history, last_sources, no_stream):
     """Execute a chat turn with streaming output."""
-    if no_stream:
-        response = await pipeline.chat(
-            query, kb_name=kb_name, provider_name=provider_name,
-            chat_history=chat_history, stream=False,
-        )
-        click.echo(f"🤖 {response.answer}")
-        if response.sources:
-            last_sources.clear()
-            last_sources.extend(response.sources)
-            click.echo(format_sources_output(response.sources))
-        if response.hallucination_risk != "low":
-            click.echo(f"⚠️  幻觉风险: {response.hallucination_risk}")
-
-        chat_history.append({"role": "user", "content": query})
-        chat_history.append({"role": "assistant", "content": response.answer})
-    else:
-        click.echo("🤖 ", nl=False)
-        full_answer = ""
-        sources = None
-
-        async for chunk in pipeline.chat_stream(
-            query, kb_name=kb_name, provider_name=provider_name,
-            chat_history=chat_history,
-        ):
-            if chunk["type"] == "token":
-                click.echo(chunk["content"], nl=False)
-                full_answer += chunk["content"]
-            elif chunk["type"] == "answer":
-                click.echo(chunk["content"], nl=False)
-                full_answer = chunk["content"]
-            elif chunk["type"] == "sources":
-                sources = chunk["sources"]
+    try:
+        if no_stream:
+            response = await pipeline.chat(
+                query, kb_name=kb_name, provider_name=provider_name,
+                chat_history=chat_history, stream=False,
+            )
+            click.echo(f"🤖 {response.answer}")
+            if response.sources:
                 last_sources.clear()
-                last_sources.extend(chunk["sources"])
-            elif chunk["type"] == "done":
-                click.echo()
-                if sources:
-                    click.echo(format_sources_output(sources))
-                if chunk.get("hallucination_risk", "low") != "low":
-                    click.echo(f"⚠️  幻觉风险: {chunk['hallucination_risk']}")
+                last_sources.extend(response.sources)
+                click.echo(format_sources_output(response.sources))
+            if response.hallucination_risk != "low":
+                click.echo(f"⚠️  幻觉风险: {response.hallucination_risk}")
 
-        chat_history.append({"role": "user", "content": query})
-        chat_history.append({"role": "assistant", "content": full_answer})
+            chat_history.append({"role": "user", "content": query})
+            chat_history.append({"role": "assistant", "content": response.answer})
+        else:
+            click.echo("🤖 ", nl=False)
+            full_answer = ""
+            sources = None
+
+            async for chunk in pipeline.chat_stream(
+                query, kb_name=kb_name, provider_name=provider_name,
+                chat_history=chat_history,
+            ):
+                if chunk["type"] == "token":
+                    click.echo(chunk["content"], nl=False)
+                    full_answer += chunk["content"]
+                elif chunk["type"] == "answer":
+                    click.echo(chunk["content"], nl=False)
+                    full_answer = chunk["content"]
+                elif chunk["type"] == "sources":
+                    sources = chunk["sources"]
+                    last_sources.clear()
+                    last_sources.extend(chunk["sources"])
+                elif chunk["type"] == "done":
+                    click.echo()
+                    if sources:
+                        click.echo(format_sources_output(sources))
+                    if chunk.get("hallucination_risk", "low") != "low":
+                        click.echo(f"⚠️  幻觉风险: {chunk['hallucination_risk']}")
+
+            chat_history.append({"role": "user", "content": query})
+            chat_history.append({"role": "assistant", "content": full_answer})
+    except Exception as e:
+        click.echo(f"\n❌ 对话出错: {e}")
+        # Don't add failed query to history
 
 
 @click.command("ask")

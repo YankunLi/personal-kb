@@ -27,7 +27,7 @@ class ChromaStore:
             settings=Settings(anonymized_telemetry=False),
         )
 
-    def _collection_name(self, kb_name: str) -> str:
+    def collection_name(self, kb_name: str) -> str:
         """Convert KB name to a valid ChromaDB collection name."""
         # ChromaDB collection names must be 3-512 chars, alphanumeric + . _ -
         # Must start and end with alphanumeric.
@@ -42,6 +42,10 @@ class ChromaStore:
         if not safe[-1].isalnum():
             safe = safe + "0"
         return f"kb_{safe}"
+
+    def _collection_name(self, kb_name: str) -> str:
+        """Backward-compatible alias for collection_name."""
+        return self.collection_name(kb_name)
 
     def get_or_create_collection(self, kb_name: str):
         """Get or create a ChromaDB collection for a knowledge base."""
@@ -58,6 +62,62 @@ class ChromaStore:
             self._client.delete_collection(name)
         except Exception:
             pass  # Collection doesn't exist or already deleted
+
+    def copy_collection(self, source_kb: str, target_kb: str, batch_size: int = 1000):
+        """Copy all data from one collection to another using batching.
+
+        Args:
+            source_kb: Source KB name.
+            target_kb: Target KB name.
+            batch_size: Number of items per batch.
+
+        Raises:
+            ValueError: If source collection doesn't exist.
+            RuntimeError: If copy fails verification.
+        """
+        source_name = self._collection_name(source_kb)
+        target_name = self._collection_name(target_kb)
+
+        try:
+            source_coll = self._client.get_collection(source_name)
+        except Exception:
+            raise ValueError(f"Source collection '{source_kb}' does not exist")
+
+        total = source_coll.count()
+        if total == 0:
+            # Just ensure target exists
+            self.get_or_create_collection(target_kb)
+            return
+
+        target_coll = self._client.get_or_create_collection(
+            name=target_name,
+            metadata={"hnsw:space": "cosine"},
+        )
+
+        copied = 0
+        offset = 0
+        while offset < total:
+            batch = source_coll.get(
+                offset=offset,
+                limit=batch_size,
+                include=["documents", "metadatas", "embeddings"],
+            )
+            if batch["ids"]:
+                target_coll.add(
+                    ids=batch["ids"],
+                    documents=batch["documents"] or [],
+                    metadatas=batch["metadatas"] or [],
+                    embeddings=batch["embeddings"] or [],
+                )
+                copied += len(batch["ids"])
+            offset += batch_size
+
+        if copied < total:
+            self._client.delete_collection(target_name)
+            raise RuntimeError(
+                f"Failed to copy all chunks during rename "
+                f"(expected {total}, got {copied})"
+            )
 
     def collection_exists(self, kb_name: str) -> bool:
         """Check if a collection exists for a KB."""

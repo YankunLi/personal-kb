@@ -92,17 +92,19 @@ class HybridRetriever:
             doc_id = result["id"]
             rrf_score = 1.0 / (self.rrf_k + rank + 1)
             if doc_id not in rrf_scores:
-                rrf_scores[doc_id] = {**result, "rrf_score": rrf_score}
+                rrf_scores[doc_id] = {**result, "rrf_score": rrf_score, "score": rrf_score}
             else:
                 rrf_scores[doc_id]["rrf_score"] += rrf_score
+                rrf_scores[doc_id]["score"] = rrf_scores[doc_id]["rrf_score"]
 
         for rank, result in enumerate(sparse_results):
             doc_id = result["id"]
             rrf_score = 1.0 / (self.rrf_k + rank + 1)
             if doc_id not in rrf_scores:
-                rrf_scores[doc_id] = {**result, "rrf_score": rrf_score}
+                rrf_scores[doc_id] = {**result, "rrf_score": rrf_score, "score": rrf_score}
             else:
                 rrf_scores[doc_id]["rrf_score"] += rrf_score
+                rrf_scores[doc_id]["score"] = rrf_scores[doc_id]["rrf_score"]
 
         # Sort by RRF score descending
         sorted_results = sorted(

@@ -27,6 +27,7 @@ class BM25Index:
         self._chunk_ids: list[str] = []
         self._metadatas: list[dict] = []
         self._bm25: BM25Okapi | None = None
+        self._loaded_kb: str | None = None
 
     def _tokenize(self, text: str) -> list[str]:
         """Tokenize Chinese text using jieba."""
@@ -123,6 +124,7 @@ class BM25Index:
         self._corpus = data["corpus"]
         self._chunk_ids = data["chunk_ids"]
         self._metadatas = data["metadatas"]
+        self._loaded_kb = kb_name
 
         # Rebuild BM25 object from tokenized corpus
         tokenized_corpus = [self._tokenize(c) for c in self._corpus]
@@ -136,6 +138,20 @@ class BM25Index:
         index_path = kb_dir / "bm25.pkl"
         if index_path.exists():
             index_path.unlink()
+
+        # Remove empty parent directory
+        try:
+            kb_dir.rmdir()
+        except OSError:
+            pass  # Directory not empty or doesn't exist
+
+        # Clear in-memory state only if the deleted KB is currently loaded
+        if self._loaded_kb == kb_name:
+            self._corpus = []
+            self._chunk_ids = []
+            self._metadatas = []
+            self._bm25 = None
+            self._loaded_kb = None
 
     def count(self) -> int:
         """Return the number of documents in the index."""

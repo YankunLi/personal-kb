@@ -1,5 +1,6 @@
 """Configuration loader: YAML parsing, env var interpolation, validation."""
 
+import logging
 import os
 import re
 from pathlib import Path
@@ -9,13 +10,19 @@ import yaml
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
+from src.generation.providers import LLMProviderConfig
+
+logger = logging.getLogger(__name__)
+
 
 # --- Pydantic models for validation ---
 
 class ChunkingConfig(BaseModel):
     chunk_size: int = 500
     chunk_overlap: int = 80
-    separators: list[str] = Field(default_factory=lambda: ["\n## ", "\n### ", "\n", "。", ".", " "])
+    separators: list[str] = Field(default_factory=lambda: [
+        "\n# ", "\n## ", "\n### ", "\n#### ", "\n", "。", ".", "！", "？", "；", " ",
+    ])
     enable_deduplication: bool = True
 
 
@@ -44,6 +51,7 @@ class RetrievalConfig(BaseModel):
     hybrid_top_k: int = 50
     rerank_top_n: int = 5
     reranker_model: str = "BAAI/bge-reranker-v2-m3"
+    reranker_model_revision: str = "main"
     semantic_cache: dict = Field(default_factory=lambda: {
         "enabled": True,
         "similarity_threshold": 0.95,
@@ -54,13 +62,6 @@ class RetrievalConfig(BaseModel):
 class LLMRetryConfig(BaseModel):
     max_attempts: int = 3
     backoff_seconds: float = 1.0
-
-
-class LLMProviderConfig(BaseModel):
-    name: str
-    base_url: str
-    model: str
-    api_key: str
 
 
 class LLMConfig(BaseModel):
@@ -102,12 +103,28 @@ class AppConfig(BaseModel):
 
 _ENV_VAR_RE = re.compile(r"\$\{(\w+)\}")
 
+# Sentinel to track unresolved env vars
+_UNRESOLVED_ENV_VARS: list[str] = []
+
 
 def _interpolate_env_vars(value: Any) -> Any:
-    """Recursively replace ${ENV_VAR} patterns in strings with environment values."""
+    """Recursively replace ${ENV_VAR} patterns in strings with environment values.
+
+    Logs a warning for any environment variable that is not set.
+    """
     if isinstance(value, str):
         def _replace(m: re.Match) -> str:
-            return os.environ.get(m.group(1), m.group(0))
+            var_name = m.group(1)
+            env_val = os.environ.get(var_name)
+            if env_val is None:
+                _UNRESOLVED_ENV_VARS.append(var_name)
+                logger.warning(
+                    "Environment variable '%s' is not set; "
+                    "leaving ${%s} as literal value in config.",
+                    var_name, var_name,
+                )
+                return m.group(0)
+            return env_val
         return _ENV_VAR_RE.sub(_replace, value)
     if isinstance(value, dict):
         return {k: _interpolate_env_vars(v) for k, v in value.items()}
@@ -141,6 +158,15 @@ def load_config(config_path: str | Path = "config.yaml") -> AppConfig:
 
     raw = _interpolate_env_vars(raw)
 
+    # Warn about unresolved env vars
+    if _UNRESOLVED_ENV_VARS:
+        logger.warning(
+            "Unresolved environment variables: %s. "
+            "LLM calls using these providers will fail with authentication errors.",
+            ", ".join(sorted(set(_UNRESOLVED_ENV_VARS))),
+        )
+        _UNRESOLVED_ENV_VARS.clear()
+
     # Flatten provider configs into LLMConfig
     llm_raw = raw.get("llm", {})
     providers_raw = llm_raw.pop("providers", {})
@@ -148,7 +174,7 @@ def load_config(config_path: str | Path = "config.yaml") -> AppConfig:
         key: LLMProviderConfig(**val) for key, val in providers_raw.items()
     }
 
-    return AppConfig(
+    config = AppConfig(
         defaults=DefaultsConfig(**raw.get("defaults", {})),
         chunking=ChunkingConfig(**raw.get("chunking", {})),
         embedding=EmbeddingConfig(**raw.get("embedding", {})),
@@ -158,6 +184,16 @@ def load_config(config_path: str | Path = "config.yaml") -> AppConfig:
         hallucination=HallucinationConfig(**raw.get("hallucination", {})),
         paths=PathsConfig(**raw.get("paths", {})),
     )
+
+    # Warn if embedding model_revision is not pinned
+    if config.embedding.model_revision == "main":
+        logger.warning(
+            "Embedding model_revision is 'main' (floating). "
+            "This can cause embedding drift when the model is updated upstream. "
+            "Set a specific revision hash in config.yaml to pin the version."
+        )
+
+    return config
 
 
 def get_project_root() -> Path:

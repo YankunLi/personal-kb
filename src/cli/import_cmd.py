@@ -37,13 +37,17 @@ def import_cmd(path: str, kb_name: str, recursive: bool, dry_run: bool):
             click.echo(msg)
             last_status[0] = msg
 
-    result = pipeline.import_documents(
-        path=path,
-        kb_name=kb_name,
-        recursive=recursive,
-        dry_run=dry_run,
-        progress_callback=progress,
-    )
+    try:
+        result = pipeline.import_documents(
+            path=path,
+            kb_name=kb_name,
+            recursive=recursive,
+            dry_run=dry_run,
+            progress_callback=progress,
+        )
+    except Exception as e:
+        _handle_import_error(e)
+        return
 
     if dry_run:
         click.echo(f"\n✅ 预览完成: {result['files']} 个文件将被导入")
@@ -53,3 +57,18 @@ def import_cmd(path: str, kb_name: str, recursive: bool, dry_run: bool):
         click.echo(f"   分块: {result['chunks']} 个")
         if result['duplicates'] > 0:
             click.echo(f"   去重: {result['duplicates']} 个重复块已跳过")
+
+
+def _handle_import_error(e: Exception):
+    """Provide user-friendly error messages for common import failures."""
+    msg = str(e)
+    if "No such file" in msg or "not found" in msg.lower():
+        click.echo(f"❌ 文件未找到: {e}")
+    elif "permission" in msg.lower():
+        click.echo(f"❌ 权限不足: {e}")
+    elif "memory" in msg.lower() or "OOM" in msg:
+        click.echo(f"❌ 内存不足，请尝试导入较小的文件: {e}")
+    elif "model" in msg.lower() and ("load" in msg.lower() or "download" in msg.lower()):
+        click.echo(f"❌ 模型加载失败，请检查网络和 HuggingFace 镜像设置: {e}")
+    else:
+        click.echo(f"❌ 导入失败: {e}")

@@ -5,6 +5,8 @@ Based on Article A: System prompt must require source citation and forbid fabric
 
 from typing import Any
 
+from src.source_tracking.tracker import extract_citations
+
 
 SYSTEM_PROMPT_TEMPLATE = """你是一个个人知识库助手。严格遵循以下规则：
 
@@ -80,12 +82,3 @@ def build_messages(
 
     messages.append({"role": "user", "content": query})
     return messages
-
-
-def extract_citations(answer: str) -> list[str]:
-    """Extract source citations from the answer text.
-
-    Finds patterns like [来源1], [来源2], etc.
-    """
-    import re
-    return re.findall(r"\[来源\d+\]", answer)

@@ -71,7 +71,10 @@ class Pipeline:
             hybrid_top_k=config.retrieval.hybrid_top_k,
             rrf_k=config.retrieval.rrf_k,
         )
-        self.reranker = Reranker(model_name=config.retrieval.reranker_model)
+        self.reranker = Reranker(
+            model_name=config.retrieval.reranker_model,
+            model_revision=config.retrieval.reranker_model_revision,
+        )
         self.semantic_cache = SemanticCache(
             similarity_threshold=config.retrieval.semantic_cache["similarity_threshold"],
             max_size=config.retrieval.semantic_cache["max_size"],
@@ -122,7 +125,7 @@ class Pipeline:
         existing_hashes = self.chroma.get_existing_hashes(kb_name)
         self.deduplicator.reset()
         if existing_hashes:
-            self.deduplicator._seen_hashes.update(existing_hashes)
+            self.deduplicator.seed_hashes(existing_hashes)
 
         total_files = 0
         total_chunks = 0
@@ -161,7 +164,6 @@ class Pipeline:
             chunks = enrich_chunks(chunks, base_meta)
 
             # Deduplicate
-            chunks_before = len(chunks)
             if self.config.chunking.enable_deduplication:
                 chunks, dups = self.deduplicator.deduplicate(chunks)
                 total_duplicates += dups
@@ -187,6 +189,9 @@ class Pipeline:
                 "duplicates": total_duplicates,
             }
 
+        # Clear semantic cache for this KB since new data is being added
+        self.semantic_cache.clear(kb_name)
+
         if progress_callback:
             progress_callback("embed", "", 0)
 
@@ -201,8 +206,11 @@ class Pipeline:
         self.chroma.add_chunks(kb_name, all_chunks, embeddings)
 
         # Rebuild BM25 index (load existing + add new)
-        self.bm25.load(kb_name)
-        self.bm25.add_chunks(all_chunks)
+        if not self.bm25.load(kb_name):
+            # No existing index, build from scratch with new chunks
+            self.bm25.build(all_chunks)
+        else:
+            self.bm25.add_chunks(all_chunks)
         self.bm25.save(kb_name)
 
         # Update KB stats
@@ -277,7 +285,7 @@ class Pipeline:
 
         # Check semantic cache
         if self.config.retrieval.semantic_cache["enabled"]:
-            cached = self.semantic_cache.get(query_emb)
+            cached = self.semantic_cache.get(query_emb, kb_name=kb_name)
             if cached:
                 latency = (time.time() - start_time) * 1000
                 return RAGResponse(
@@ -331,7 +339,7 @@ class Pipeline:
 
         # Update semantic cache
         if self.config.retrieval.semantic_cache["enabled"]:
-            self.semantic_cache.set(query_emb, answer, sources)
+            self.semantic_cache.set(query_emb, answer, sources, kb_name=kb_name)
 
         latency = (time.time() - start_time) * 1000
 
@@ -364,7 +372,7 @@ class Pipeline:
 
         # Check semantic cache
         if self.config.retrieval.semantic_cache["enabled"]:
-            cached = self.semantic_cache.get(query_emb)
+            cached = self.semantic_cache.get(query_emb, kb_name=kb_name)
             if cached:
                 yield {"type": "answer", "content": cached["answer"]}
                 yield {"type": "sources", "sources": cached["sources"]}
@@ -381,7 +389,7 @@ class Pipeline:
         if not results:
             yield {
                 "type": "answer",
-                "content": "抱歉，在当前知识库中没有找到相关信息。",
+                "content": "抱歉，在当前知识库中没有找到相关信息。请尝试更换关键词或导入相关文档。",
             }
             yield {"type": "sources", "sources": []}
             yield {

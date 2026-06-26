@@ -6,6 +6,7 @@ Uses httpx for lightweight async HTTP calls without the openai SDK dependency.
 
 import asyncio
 import json
+import time
 from typing import Any, AsyncIterator
 
 import httpx
@@ -31,6 +32,27 @@ class LLMAdapter:
         self.backoff_seconds = backoff_seconds
 
         self._client: httpx.AsyncClient | None = None
+        self._oauth_token: str | None = None
+        self._oauth_token_expiry: float = 0.0
+
+    async def _get_oauth_token(self) -> str:
+        """Exchange API key for OAuth access token (Baidu ERNIE)."""
+        if self._oauth_token and time.time() < self._oauth_token_expiry - 60:
+            return self._oauth_token
+
+        url = "https://aip.baidubce.com/oauth/2.0/token"
+        params = {
+            "grant_type": "client_credentials",
+            "client_id": self.provider.api_key,
+            "client_secret": self.provider.api_key,
+        }
+        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+            resp = await client.post(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            self._oauth_token = data["access_token"]
+            self._oauth_token_expiry = time.time() + data.get("expires_in", 86400)
+            return self._oauth_token
 
     @property
     def client(self) -> httpx.AsyncClient:
@@ -41,12 +63,18 @@ class LLMAdapter:
             self._client = httpx.AsyncClient(
                 base_url=base_url,
                 headers={
-                    "Authorization": f"Bearer {self.provider.api_key}",
                     "Content-Type": "application/json",
                 },
                 timeout=httpx.Timeout(60.0),
             )
         return self._client
+
+    async def _get_auth_headers(self) -> dict[str, str]:
+        """Get authorization headers based on provider auth type."""
+        if self.provider.auth_type == "oauth":
+            token = await self._get_oauth_token()
+            return {"Authorization": f"Bearer {token}"}
+        return {"Authorization": f"Bearer {self.provider.api_key}"}
 
     async def _chat_completion_request(
         self,
@@ -69,9 +97,12 @@ class LLMAdapter:
 
         for attempt in range(self.max_retries):
             try:
+                auth_headers = await self._get_auth_headers()
+                headers = {**auth_headers, "Content-Type": "application/json"}
                 response = await self.client.post(
                     "chat/completions",
                     json=payload,
+                    headers=headers,
                 )
                 response.raise_for_status()
                 return response

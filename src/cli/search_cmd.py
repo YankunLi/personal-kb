@@ -19,7 +19,11 @@ def search_cmd(query: str, kb_name: str, top_k: int, show_scores: bool):
 
     click.echo(f"🔍 在知识库 '{kb_name}' 中搜索: {query}\n")
 
-    results = pipeline.search(query, kb_name=kb_name, top_k=top_k)
+    try:
+        results = pipeline.search(query, kb_name=kb_name, top_k=top_k)
+    except Exception as e:
+        click.echo(f"❌ 搜索失败: {e}")
+        return
 
     if not results:
         click.echo("未找到相关结果。")
