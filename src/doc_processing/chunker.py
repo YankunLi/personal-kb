@@ -12,6 +12,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # Default separators: heading > paragraph > sentence > word
 DEFAULT_SEPARATORS = [
+    "\n# ",
     "\n## ",
     "\n### ",
     "\n#### ",

@@ -173,6 +173,7 @@ class KBManager:
                         f"(expected {len(old_data['ids'])}, got {new_coll.count()})"
                     )
             else:
+                self.chroma.get_or_create_collection(new_name)
                 self.chroma.delete_collection(old_name)
 
         # Copy BM25 index

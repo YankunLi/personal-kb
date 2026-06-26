@@ -6,7 +6,7 @@ from pathlib import Path
 
 def parse_txt(file_path: Path) -> str:
     """Parse plain text file, trying UTF-8 first, then GBK."""
-    for encoding in ("utf-8", "gbk", "gb2312", "latin-1"):
+    for encoding in ("utf-8", "gbk", "gb2312"):
         try:
             return file_path.read_text(encoding=encoding)
         except (UnicodeDecodeError, UnicodeError):
