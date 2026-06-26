@@ -168,7 +168,7 @@ def load_config(config_path: str | Path = "config.yaml") -> AppConfig:
         _UNRESOLVED_ENV_VARS.clear()
 
     # Flatten provider configs into LLMConfig
-    llm_raw = raw.get("llm", {})
+    llm_raw = raw.get("llm") or {}
     providers_raw = llm_raw.pop("providers", {})
     llm_raw["providers"] = {
         key: LLMProviderConfig(**val) for key, val in providers_raw.items()

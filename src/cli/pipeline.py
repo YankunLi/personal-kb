@@ -245,7 +245,8 @@ class Pipeline:
             List of result dicts with content, metadata, scores.
         """
         # Load BM25 index for this KB
-        self.bm25.load(kb_name)
+        if not self.bm25.load(kb_name):
+            return []
 
         # Hybrid search
         results = self.retriever.retrieve(kb_name, query, top_k=top_k)
@@ -278,7 +279,14 @@ class Pipeline:
         start_time = time.time()
 
         # Load BM25 index for this KB
-        self.bm25.load(kb_name)
+        if not self.bm25.load(kb_name):
+            latency = (time.time() - start_time) * 1000
+            return RAGResponse(
+                answer="抱歉，BM25 索引加载失败，请尝试重新导入文档。",
+                sources=[],
+                hallucination_risk="low",
+                latency_ms=latency,
+            )
 
         # Compute query embedding once for cache + retrieval
         query_emb = self.embedder.encode_query(query)
@@ -365,7 +373,18 @@ class Pipeline:
         start_time = time.time()
 
         # Load BM25 index
-        self.bm25.load(kb_name)
+        if not self.bm25.load(kb_name):
+            yield {
+                "type": "answer",
+                "content": "抱歉，BM25 索引加载失败，请尝试重新导入文档。",
+            }
+            yield {"type": "sources", "sources": []}
+            yield {
+                "type": "done",
+                "hallucination_risk": "low",
+                "latency_ms": (time.time() - start_time) * 1000,
+            }
+            return
 
         # Compute query embedding once for cache + retrieval
         query_emb = self.embedder.encode_query(query)

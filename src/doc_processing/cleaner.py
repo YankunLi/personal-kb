@@ -55,6 +55,9 @@ def normalize_text(text: str) -> str:
     lines = [line.strip() for line in text.split("\n")]
     text = "\n".join(lines)
 
+    # Second pass: collapse newly-formed empty lines (3+) after per-line strip
+    text = re.sub(r"\n{3,}", "\n\n", text)
+
     # Remove empty lines at start and end
     text = text.strip()
 

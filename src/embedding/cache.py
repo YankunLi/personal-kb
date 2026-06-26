@@ -25,8 +25,16 @@ class EmbeddingCache:
 
     def _load_index(self) -> dict[str, dict]:
         if self._index_path.exists():
-            with open(self._index_path, "r") as f:
-                return json.load(f)
+            try:
+                with open(self._index_path, "r") as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, OSError):
+                # Index file corrupted; reset and rebuild from cache directory
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Embedding cache index corrupted, rebuilding from disk."
+                )
+                return {}
         return {}
 
     def _save_index(self):

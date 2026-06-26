@@ -74,7 +74,7 @@ def chat_cmd(kb_name: str, provider_name: str, no_stream: bool):
                 click.echo("对话历史和来源已清除")
                 continue
             elif cmd.startswith("/kb "):
-                new_kb = cmd[4:].strip()
+                new_kb = query[4:].strip()  # use original query, not lowercased
                 if pipeline.kb_manager.exists(new_kb):
                     kb_name = new_kb
                     chat_history.clear()
@@ -85,7 +85,7 @@ def chat_cmd(kb_name: str, provider_name: str, no_stream: bool):
                     click.echo(f"知识库 '{new_kb}' 不存在")
                 continue
             elif cmd.startswith("/provider "):
-                new_prov = cmd[10:].strip()
+                new_prov = query[10:].strip()  # use original query
                 if new_prov in pipeline.config.llm.providers:
                     provider_name = new_prov
                     prov_info = pipeline.config.llm.providers[new_prov]

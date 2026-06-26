@@ -50,7 +50,7 @@ class Reranker:
             for doc in documents:
                 if "rerank_score" not in doc:
                     doc["rerank_score"] = doc.get("score", 0.0)
-            return documents
+            return sorted(documents, key=lambda x: x.get("rerank_score", 0), reverse=True)
 
         pairs = [[query, doc["content"]] for doc in documents]
         scores = self.model.compute_score(pairs, normalize=True)

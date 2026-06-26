@@ -98,9 +98,10 @@ def chunk_document(
             "metadata": chunk_meta,
         })
 
-    # Update total_chunks to reflect actual (non-empty) chunk count
+    # Update total_chunks and re-index after filtering empty chunks
     actual_total = len(result)
-    for chunk in result:
+    for new_idx, chunk in enumerate(result):
+        chunk["metadata"]["chunk_index"] = new_idx
         chunk["metadata"]["total_chunks"] = actual_total
 
     return result

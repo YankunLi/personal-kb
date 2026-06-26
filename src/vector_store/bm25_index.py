@@ -51,7 +51,7 @@ class BM25Index:
             self._metadatas.append(chunk["metadata"])
             tokenized_corpus.append(self._tokenize(content))
 
-        self._bm25 = BM25Okapi(tokenized_corpus)
+        self._bm25 = BM25Okapi(tokenized_corpus) if tokenized_corpus else None
 
     def add_chunks(self, chunks: list[dict[str, Any]]):
         """Add new chunks to the existing BM25 index (rebuilds entirely).
@@ -128,7 +128,7 @@ class BM25Index:
 
         # Rebuild BM25 object from tokenized corpus
         tokenized_corpus = [self._tokenize(c) for c in self._corpus]
-        self._bm25 = BM25Okapi(tokenized_corpus)
+        self._bm25 = BM25Okapi(tokenized_corpus) if tokenized_corpus else None
 
         return True
 

@@ -80,7 +80,7 @@ class ChromaStore:
 
         try:
             source_coll = self._client.get_collection(source_name)
-        except Exception:
+        except ValueError:
             raise ValueError(f"Source collection '{source_kb}' does not exist")
 
         total = source_coll.count()
@@ -105,9 +105,9 @@ class ChromaStore:
             if batch["ids"]:
                 target_coll.add(
                     ids=batch["ids"],
-                    documents=batch["documents"] or [],
-                    metadatas=batch["metadatas"] or [],
-                    embeddings=batch["embeddings"] or [],
+                    documents=batch["documents"],
+                    metadatas=batch["metadatas"],
+                    embeddings=batch["embeddings"],
                 )
                 copied += len(batch["ids"])
             offset += batch_size
