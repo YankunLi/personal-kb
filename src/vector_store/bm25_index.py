@@ -123,8 +123,15 @@ class BM25Index:
         if not index_path.exists():
             return False
 
-        with open(index_path, "rb") as f:
-            data = pickle.load(f)
+        try:
+            with open(index_path, "rb") as f:
+                data = pickle.load(f)
+        except (pickle.UnpicklingError, EOFError, OSError) as e:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Failed to load BM25 index for '%s': %s", kb_name, e
+            )
+            return False
 
         self._corpus = data["corpus"]
         self._chunk_ids = data["chunk_ids"]
