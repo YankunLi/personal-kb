@@ -82,7 +82,8 @@ def build_messages(
     # ensuring the first message is always a user role for API compatibility.
     if chat_history:
         truncated = chat_history[-6:]
-        if truncated and truncated[0]["role"] == "assistant":
+        # Drop all leading assistant messages to ensure first message is from user
+        while truncated and truncated[0]["role"] == "assistant":
             truncated = truncated[1:]
         messages.extend(truncated)
 
