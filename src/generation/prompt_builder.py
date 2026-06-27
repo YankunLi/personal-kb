@@ -34,7 +34,11 @@ def format_context(
     for i, doc in enumerate(documents, 1):
         content = doc.get("content", "")
         metadata = doc.get("metadata", {})
-        score = doc.get("rerank_score", doc.get("score", 0))
+        score = doc.get("rerank_score")
+        if score is None:
+            score = doc.get("score", 0)
+        if score is None:
+            score = 0.0
 
         # Truncate long content to prevent lost-in-the-middle effect
         truncated = content[:max_chars_per_doc] if len(content) > max_chars_per_doc else content

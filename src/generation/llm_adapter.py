@@ -53,7 +53,12 @@ class LLMAdapter:
             resp = await client.post(url, params=params)
             resp.raise_for_status()
             data = resp.json()
-            self._oauth_token = data["access_token"]
+            token = data.get("access_token")
+            if not token:
+                raise RuntimeError(
+                    f"OAuth token endpoint returned no access_token: {data}"
+                )
+            self._oauth_token = token
             self._oauth_token_expiry = time.time() + data.get("expires_in", 86400)
             return self._oauth_token
 
@@ -108,8 +113,11 @@ class LLMAdapter:
                 return response
             except (httpx.HTTPError, httpx.TimeoutException) as e:
                 # Don't retry on permanent client errors (4xx except 429 rate limit)
-                if isinstance(e, httpx.HTTPStatusError) and e.response.status_code < 500 and e.response.status_code != 429:
-                    raise
+                if isinstance(e, httpx.HTTPStatusError):
+                    if e.response.status_code < 500 and e.response.status_code != 429:
+                        await e.response.aclose()
+                        raise
+                    await e.response.aclose()  # Close response before retry
                 if attempt < self.max_retries - 1:
                     wait = self.backoff_seconds * (2 ** attempt)
                     await asyncio.sleep(wait)

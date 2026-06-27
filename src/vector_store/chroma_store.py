@@ -18,9 +18,10 @@ class ChromaStore:
     Each knowledge base is a separate ChromaDB collection.
     """
 
-    def __init__(self, persist_dir: str = "data/chroma_db"):
+    def __init__(self, persist_dir: str = "data/chroma_db", distance_metric: str = "cosine"):
         self.persist_dir = Path(persist_dir)
         self.persist_dir.mkdir(parents=True, exist_ok=True)
+        self.distance_metric = distance_metric
 
         self._client = chromadb.PersistentClient(
             path=str(self.persist_dir),
@@ -56,7 +57,7 @@ class ChromaStore:
         name = self._collection_name(kb_name)
         return self._client.get_or_create_collection(
             name=name,
-            metadata={"hnsw:space": "cosine"},
+            metadata={"hnsw:space": self.distance_metric},
         )
 
     def delete_collection(self, kb_name: str):
@@ -95,7 +96,7 @@ class ChromaStore:
 
         target_coll = self._client.get_or_create_collection(
             name=target_name,
-            metadata={"hnsw:space": "cosine"},
+            metadata={"hnsw:space": self.distance_metric},
         )
 
         copied = 0
@@ -207,19 +208,15 @@ class ChromaStore:
 
     def get_existing_hashes(self, kb_name: str) -> set[str]:
         """Get all content hashes currently in the collection (for dedup)."""
-        try:
-            collection = self.get_or_create_collection(kb_name)
-            results = collection.get(include=["metadatas"])
-            hashes = set()
-            if results["metadatas"]:
-                for meta in results["metadatas"]:
-                    h = meta.get("content_hash", "")
-                    if h:
-                        hashes.add(h)
-            return hashes
-        except ValueError:
-            # Collection doesn't exist yet (e.g., new KB)
-            return set()
+        collection = self.get_or_create_collection(kb_name)
+        results = collection.get(include=["metadatas"])
+        hashes = set()
+        if results["metadatas"]:
+            for meta in results["metadatas"]:
+                h = meta.get("content_hash", "")
+                if h:
+                    hashes.add(h)
+        return hashes
 
     def count(self, kb_name: str) -> int:
         """Return the number of chunks in a knowledge base."""
@@ -228,6 +225,13 @@ class ChromaStore:
             return collection.count()
         except Exception:
             return 0
+
+    def delete_by_ids(self, kb_name: str, chunk_ids: list[str]):
+        """Delete chunks by their IDs."""
+        if not chunk_ids:
+            return
+        collection = self.get_or_create_collection(kb_name)
+        collection.delete(ids=chunk_ids)
 
     def delete_by_file(self, kb_name: str, source_file: str):
         """Delete all chunks from a specific source file."""

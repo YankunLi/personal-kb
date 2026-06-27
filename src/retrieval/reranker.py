@@ -5,6 +5,7 @@ Based on Article B: "Re-rank 能再 +7-10%"
 """
 
 from typing import Any
+import threading
 
 
 class Reranker:
@@ -18,17 +19,20 @@ class Reranker:
         self.model_name = model_name
         self.model_revision = model_revision
         self._model: Any = None
+        self._model_lock = threading.Lock()
 
     @property
     def model(self):
-        """Lazy-load the reranker model."""
+        """Lazy-load the reranker model (thread-safe)."""
         if self._model is None:
-            from FlagEmbedding import FlagReranker
-            self._model = FlagReranker(
-                self.model_name,
-                use_fp16=True,
-                revision=self.model_revision,
-            )
+            with self._model_lock:
+                if self._model is None:
+                    from FlagEmbedding import FlagReranker
+                    self._model = FlagReranker(
+                        self.model_name,
+                        use_fp16=True,
+                        revision=self.model_revision,
+                    )
         return self._model
 
     def rerank(
@@ -49,8 +53,9 @@ class Reranker:
         """
         if len(documents) <= top_n:
             for doc in documents:
-                if "rerank_score" not in doc:
-                    doc["rerank_score"] = doc.get("score", 0.0)
+                if "rerank_score" not in doc or doc.get("rerank_score") is None:
+                    score = doc.get("score")
+                    doc["rerank_score"] = float(score) if score is not None else 0.0
             return sorted(documents, key=lambda x: x.get("rerank_score", 0), reverse=True)
 
         pairs = [[query, doc["content"]] for doc in documents]

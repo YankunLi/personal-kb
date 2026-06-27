@@ -96,7 +96,7 @@ def parse_html(file_path: Path) -> str:
     """Parse HTML file, extracting text content with structure preservation."""
     from bs4 import BeautifulSoup
 
-    html = file_path.read_text(encoding="utf-8", errors="replace")
+    html = _read_with_fallback(file_path)
     try:
         soup = BeautifulSoup(html, "lxml")
     except Exception:

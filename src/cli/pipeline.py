@@ -57,7 +57,10 @@ class Pipeline:
             cache_dir=config.embedding.cache_dir,
             cache_max_entries=config.embedding.cache_max_entries,
         )
-        self.chroma = ChromaStore(persist_dir=config.paths.chroma_db)
+        self.chroma = ChromaStore(
+            persist_dir=config.vector_store.persist_dir,
+            distance_metric=config.vector_store.distance_metric,
+        )
         self.bm25 = BM25Index(index_dir=config.paths.bm25_index_dir)
         self.kb_manager = KBManager(
             registry_path=config.paths.kb_registry,
@@ -78,8 +81,8 @@ class Pipeline:
             model_revision=config.retrieval.reranker_model_revision,
         )
         self.semantic_cache = SemanticCache(
-            similarity_threshold=config.retrieval.semantic_cache["similarity_threshold"],
-            max_size=config.retrieval.semantic_cache["max_size"],
+            similarity_threshold=config.retrieval.semantic_cache.get("similarity_threshold", 0.95),
+            max_size=config.retrieval.semantic_cache.get("max_size", 1000),
         )
         self.deduplicator = ChunkDeduplicator()
 
@@ -213,12 +216,20 @@ class Pipeline:
         self.chroma.add_chunks(kb_name, all_chunks, embeddings)
 
         # Rebuild BM25 index (load existing + add new)
-        if not self.bm25.load(kb_name):
-            # No existing index, build from scratch with new chunks
-            self.bm25.build(all_chunks)
-        else:
-            self.bm25.add_chunks(all_chunks)
-        self.bm25.save(kb_name)
+        try:
+            if not self.bm25.load(kb_name):
+                # No existing index, build from scratch with new chunks
+                self.bm25.build(all_chunks)
+            else:
+                self.bm25.add_chunks(all_chunks)
+            self.bm25.save(kb_name)
+        except Exception:
+            # Rollback ChromaDB chunks to avoid inconsistent state
+            chunk_ids = [c["metadata"]["chunk_id"] for c in all_chunks]
+            self.chroma.delete_by_ids(kb_name, chunk_ids)
+            # Reload BM25 from disk to clear stale in-memory state
+            self.bm25.load(kb_name)
+            raise
 
         # Update KB stats
         existing = self.kb_manager.get(kb_name)
@@ -312,7 +323,7 @@ class Pipeline:
         query_emb = self.embedder.encode_query(query)
 
         # Check semantic cache
-        if self.config.retrieval.semantic_cache["enabled"]:
+        if self.config.retrieval.semantic_cache.get("enabled", True):
             cached = self.semantic_cache.get(query_emb, kb_name=kb_name)
             if cached:
                 latency = (time.time() - start_time) * 1000
@@ -366,7 +377,7 @@ class Pipeline:
         sources = extract_sources_from_contexts(results)
 
         # Update semantic cache
-        if self.config.retrieval.semantic_cache["enabled"]:
+        if self.config.retrieval.semantic_cache.get("enabled", True):
             self.semantic_cache.set(query_emb, answer, sources, kb_name=kb_name)
 
         latency = (time.time() - start_time) * 1000
@@ -423,7 +434,7 @@ class Pipeline:
         query_emb = self.embedder.encode_query(query)
 
         # Check semantic cache
-        if self.config.retrieval.semantic_cache["enabled"]:
+        if self.config.retrieval.semantic_cache.get("enabled", True):
             cached = self.semantic_cache.get(query_emb, kb_name=kb_name)
             if cached:
                 yield {"type": "answer", "content": cached["answer"]}
@@ -479,7 +490,7 @@ class Pipeline:
         sources = extract_sources_from_contexts(results)
 
         # Update semantic cache
-        if self.config.retrieval.semantic_cache["enabled"]:
+        if self.config.retrieval.semantic_cache.get("enabled", True):
             self.semantic_cache.set(query_emb, full_answer, sources, kb_name=kb_name)
 
         yield {"type": "sources", "sources": sources}

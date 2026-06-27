@@ -113,6 +113,8 @@ class BM25Index:
         with open(kb_dir / "bm25.pkl", "wb") as f:
             pickle.dump(data, f)
 
+        self._loaded_kb = kb_name
+
     def load(self, kb_name: str) -> bool:
         """Load the BM25 index from disk. Returns True if load succeeded."""
         kb_dir = self.index_dir / kb_name

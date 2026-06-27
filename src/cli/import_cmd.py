@@ -66,14 +66,18 @@ def import_cmd(path: str, kb_name: str, recursive: bool, dry_run: bool):
 
 def _handle_import_error(e: Exception):
     """Provide user-friendly error messages for common import failures."""
-    msg = str(e)
-    if "No such file" in msg or "not found" in msg.lower():
+    msg = str(e).lower()
+    if "no such file" in msg or "not found" in msg or "找不到" in msg or "不存在" in msg:
         click.echo(f"❌ 文件未找到: {e}")
-    elif "permission" in msg.lower():
+    elif "permission" in msg or "权限" in msg or "拒绝" in msg:
         click.echo(f"❌ 权限不足: {e}")
-    elif "memory" in msg.lower() or "OOM" in msg:
+    elif "memory" in msg or "oom" in msg or "内存" in msg:
         click.echo(f"❌ 内存不足，请尝试导入较小的文件: {e}")
-    elif "model" in msg.lower() and ("load" in msg.lower() or "download" in msg.lower()):
+    elif ("model" in msg and ("load" in msg or "download" in msg)) or "模型" in msg:
         click.echo(f"❌ 模型加载失败，请检查网络和 HuggingFace 镜像设置: {e}")
+    elif "disk" in msg or "磁盘" in msg or "空间" in msg:
+        click.echo(f"❌ 磁盘空间不足: {e}")
+    elif "network" in msg or "网络" in msg or "timeout" in msg or "超时" in msg:
+        click.echo(f"❌ 网络错误，请检查网络连接: {e}")
     else:
         click.echo(f"❌ 导入失败: {e}")

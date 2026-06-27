@@ -95,6 +95,10 @@ def kb_use(name: str):
     with open(config_path, "r") as f:
         config_data = yaml.load(f)
 
+    if not config_data or "defaults" not in config_data:
+        click.echo("❌ 配置文件格式错误，缺少 'defaults' 字段")
+        return
+
     config_data["defaults"]["kb"] = name
 
     with open(config_path, "w") as f:
@@ -181,6 +185,10 @@ def provider_use(name: str):
     yaml.preserve_quotes = True
     with open(config_path, "r") as f:
         config_data = yaml.load(f)
+
+    if not config_data or "defaults" not in config_data:
+        click.echo("❌ 配置文件格式错误，缺少 'defaults' 字段")
+        return
 
     config_data["defaults"]["provider"] = name
 
