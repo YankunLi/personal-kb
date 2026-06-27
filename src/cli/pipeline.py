@@ -228,7 +228,8 @@ class Pipeline:
             chunk_ids = [c["metadata"]["chunk_id"] for c in all_chunks]
             self.chroma.delete_by_ids(kb_name, chunk_ids)
             # Reload BM25 from disk to clear stale in-memory state
-            self.bm25.load(kb_name)
+            if not self.bm25.load(kb_name):
+                self.bm25.reset()
             raise
 
         # Update KB stats

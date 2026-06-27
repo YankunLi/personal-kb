@@ -144,6 +144,14 @@ class BM25Index:
 
         return True
 
+    def reset(self):
+        """Clear in-memory state without touching disk."""
+        self._corpus = []
+        self._chunk_ids = []
+        self._metadatas = []
+        self._bm25 = None
+        self._loaded_kb = None
+
     def delete(self, kb_name: str):
         """Delete the BM25 index for a knowledge base."""
         kb_dir = self.index_dir / kb_name
@@ -159,11 +167,7 @@ class BM25Index:
 
         # Clear in-memory state only if the deleted KB is currently loaded
         if self._loaded_kb == kb_name:
-            self._corpus = []
-            self._chunk_ids = []
-            self._metadatas = []
-            self._bm25 = None
-            self._loaded_kb = None
+            self.reset()
 
     def count(self) -> int:
         """Return the number of documents in the index."""
