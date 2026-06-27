@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 class ChunkingConfig(BaseModel):
     chunk_size: int = 500
     chunk_overlap: int = 80
+    chunk_method: str = "recursive"  # "recursive" or "semantic"
+    min_chunk_size: int = 100  # For semantic chunking: merge chunks below this
     separators: list[str] = Field(default_factory=lambda: [
         "\n# ", "\n## ", "\n### ", "\n#### ", "\n", "。", ".", "！", "？", "；", " ",
     ])
@@ -75,6 +77,7 @@ class LLMConfig(BaseModel):
 class HallucinationConfig(BaseModel):
     enabled: bool = True
     entity_overlap_threshold: float = 0.7
+    llm_verification: bool = False  # Optional LLM-based second-pass verification
 
 
 class PathsConfig(BaseModel):

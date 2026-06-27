@@ -10,6 +10,8 @@ defaults:
 chunking:
   chunk_size: 500
   chunk_overlap: 80
+  chunk_method: "recursive"  # "recursive" or "semantic"
+  # min_chunk_size: 100      # Only for semantic chunking
   separators:
     - "\n# "
     - "\n## "
@@ -99,6 +101,7 @@ llm:
 hallucination:
   enabled: true
   entity_overlap_threshold: 0.7
+  # llm_verification: true  # Optional: LLM double-check for high-risk answers
 
 # --- Data Paths ---
 paths:

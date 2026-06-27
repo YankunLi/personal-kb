@@ -1,12 +1,34 @@
 """Core pipeline orchestrating document import, retrieval, and generation."""
 
+import logging
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 from src.config.loader import AppConfig, load_config
+
+logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _phase(timing: dict[str, float], name: str):
+    """Context manager to record elapsed time for a named phase."""
+    t0 = time.perf_counter()
+    try:
+        yield
+    finally:
+        timing[name] = (time.perf_counter() - t0) * 1000
+
+
+def _log_timing(operation: str, timing: dict[str, float]):
+    """Log timing breakdown at DEBUG level."""
+    if not logger.isEnabledFor(logging.DEBUG):
+        return
+    parts = ", ".join(f"{k}={v:.0f}ms" for k, v in timing.items())
+    logger.debug("%s timing: %s", operation, parts)
 from src.doc_processing.loader import load_documents
-from src.doc_processing.chunker import chunk_document
+from src.doc_processing.chunker import chunk_document, chunk_document_semantic
 from src.doc_processing.metadata import build_base_metadata, enrich_chunks
 from src.doc_processing.deduplicator import ChunkDeduplicator
 from src.embedding.embedder import Embedder
@@ -17,7 +39,11 @@ from src.retrieval.reranker import Reranker
 from src.retrieval.semantic_cache import SemanticCache
 from src.generation.llm_adapter import LLMAdapter
 from src.generation.prompt_builder import build_messages
-from src.generation.hallucination import detect_hallucination, get_hallucination_risk_level
+from src.generation.hallucination import (
+    detect_hallucination,
+    get_hallucination_risk_level,
+    verify_factual_accuracy,
+)
 from src.kb_manager.manager import KBManager
 from src.source_tracking.tracker import (
     RAGResponse,
@@ -126,6 +152,7 @@ class Pipeline:
             Dict with import statistics.
         """
         path = Path(path).expanduser()
+        start_time = time.time()
 
         # Ensure KB exists
         if not self.kb_manager.exists(kb_name):
@@ -142,6 +169,7 @@ class Pipeline:
         total_duplicates = 0
         files_with_new_chunks = 0
         batch_chunks: list[dict[str, Any]] = []
+        import_timing: dict[str, float] = {"embed": 0.0, "index": 0.0}
 
         # Clear semantic cache upfront before any data is added, so queries
         # during the import don't get stale cached results from partial data.
@@ -155,12 +183,15 @@ class Pipeline:
             if progress_callback:
                 progress_callback("embed", "", 0)
 
+            t0 = time.perf_counter()
             texts = [c["content"] for c in batch]
             embeddings = self.embedder.encode_documents(texts, show_progress=False)
+            import_timing["embed"] += (time.perf_counter() - t0) * 1000
 
             if progress_callback:
                 progress_callback("index", "", 0)
 
+            t0 = time.perf_counter()
             self.chroma.add_chunks(kb_name, batch, embeddings)
 
             # Update BM25: load existing once, then add each batch incrementally
@@ -176,6 +207,8 @@ class Pipeline:
                 if not self.bm25.load(kb_name):
                     self.bm25.reset()
                 raise
+            finally:
+                import_timing["index"] += (time.perf_counter() - t0) * 1000
 
         doc_iter, failed_counter = load_documents(path, recursive=recursive)
         for doc in doc_iter:
@@ -197,13 +230,22 @@ class Pipeline:
             )
 
             # Chunk the document
-            chunks = chunk_document(
-                doc["text"],
-                metadata=None,
-                chunk_size=self.config.chunking.chunk_size,
-                chunk_overlap=self.config.chunking.chunk_overlap,
-                separators=self.config.chunking.separators,
-            )
+            if self.config.chunking.chunk_method == "semantic":
+                chunks = chunk_document_semantic(
+                    doc["text"],
+                    metadata=None,
+                    chunk_size=self.config.chunking.chunk_size,
+                    chunk_overlap=self.config.chunking.chunk_overlap,
+                    min_chunk_size=self.config.chunking.min_chunk_size,
+                )
+            else:
+                chunks = chunk_document(
+                    doc["text"],
+                    metadata=None,
+                    chunk_size=self.config.chunking.chunk_size,
+                    chunk_overlap=self.config.chunking.chunk_overlap,
+                    separators=self.config.chunking.separators,
+                )
 
             # Enrich with metadata
             chunks = enrich_chunks(chunks, base_meta)
@@ -241,6 +283,8 @@ class Pipeline:
             batch_chunks.clear()
 
         if total_chunks == 0:
+            import_timing["total"] = (time.time() - start_time) * 1000
+            _log_timing("import", import_timing)
             return {
                 "files": total_files,
                 "chunks": 0,
@@ -256,6 +300,9 @@ class Pipeline:
             chunk_count=new_chunk_count,
             file_count=existing.file_count + files_with_new_chunks,
         )
+
+        import_timing["total"] = (time.time() - start_time) * 1000
+        _log_timing("import", import_timing)
 
         return {
             "files": total_files,
@@ -315,95 +362,123 @@ class Pipeline:
         Returns:
             RAGResponse with answer, sources, and metadata.
         """
+        timing: dict[str, float] = {}
         start_time = time.time()
 
         # Load BM25 index for this KB
-        index_path = self.bm25.index_dir / kb_name / "bm25.pkl"
-        if not index_path.exists():
-            latency = (time.time() - start_time) * 1000
-            return RAGResponse(
-                answer="知识库为空，请先导入文档。",
-                sources=[],
-                hallucination_risk="low",
-                latency_ms=latency,
-            )
-        if not self.bm25.load(kb_name):
-            latency = (time.time() - start_time) * 1000
-            return RAGResponse(
-                answer="抱歉，BM25 索引损坏，请尝试重新导入文档。",
-                sources=[],
-                hallucination_risk="low",
-                latency_ms=latency,
-            )
-
-        # Compute query embedding once for cache + retrieval
-        query_emb = self.embedder.encode_query(query)
-
-        # Check semantic cache
-        if self.config.retrieval.semantic_cache.get("enabled", True):
-            cached = self.semantic_cache.get(query_emb, kb_name=kb_name)
-            if cached:
-                latency = (time.time() - start_time) * 1000
+        with _phase(timing, "bm25_load"):
+            index_path = self.bm25.index_dir / kb_name / "bm25.pkl"
+            if not index_path.exists():
+                timing["total"] = (time.time() - start_time) * 1000
+                _log_timing("chat", timing)
                 return RAGResponse(
-                    answer=cached["answer"],
-                    sources=cached["sources"],
+                    answer="知识库为空，请先导入文档。",
+                    sources=[],
                     hallucination_risk="low",
-                    latency_ms=latency,
+                    latency_ms=timing["total"],
+                )
+            if not self.bm25.load(kb_name):
+                timing["total"] = (time.time() - start_time) * 1000
+                _log_timing("chat", timing)
+                return RAGResponse(
+                    answer="抱歉，BM25 索引损坏，请尝试重新导入文档。",
+                    sources=[],
+                    hallucination_risk="low",
+                    latency_ms=timing["total"],
                 )
 
+        # Compute query embedding once for cache + retrieval
+        with _phase(timing, "query_embed"):
+            query_emb = self.embedder.encode_query(query)
+
+        # Check semantic cache
+        with _phase(timing, "cache_check"):
+            if self.config.retrieval.semantic_cache.get("enabled", True):
+                cached = self.semantic_cache.get(query_emb, kb_name=kb_name)
+                if cached:
+                    timing["total"] = (time.time() - start_time) * 1000
+                    _log_timing("chat", timing)
+                    return RAGResponse(
+                        answer=cached["answer"],
+                        sources=cached["sources"],
+                        hallucination_risk="low",
+                        latency_ms=timing["total"],
+                    )
+
         # Hybrid search
-        results = self.retriever.retrieve(kb_name, query, query_embedding=query_emb)
+        with _phase(timing, "hybrid_search"):
+            results = self.retriever.retrieve(kb_name, query, query_embedding=query_emb)
 
         if not results:
-            latency = (time.time() - start_time) * 1000
+            timing["total"] = (time.time() - start_time) * 1000
+            _log_timing("chat", timing)
             return RAGResponse(
                 answer="抱歉，在当前知识库中没有找到相关信息。请尝试更换关键词或导入相关文档。",
                 sources=[],
                 hallucination_risk="low",
-                latency_ms=latency,
+                latency_ms=timing["total"],
             )
 
         # Rerank
-        results = self.reranker.rerank(query, results, top_n=self.config.retrieval.rerank_top_n)
+        with _phase(timing, "rerank"):
+            results = self.reranker.rerank(query, results, top_n=self.config.retrieval.rerank_top_n)
 
         # Build prompt
-        messages = build_messages(query, results, chat_history=chat_history)
+        with _phase(timing, "build_prompt"):
+            messages = build_messages(query, results, chat_history=chat_history)
 
         # Generate
-        llm = None
-        try:
-            llm = self._get_llm_adapter(provider_name)
-            if stream:
-                answer = ""
-                async for token in llm.chat_stream(messages):
-                    answer += token
-            else:
-                answer = await llm.chat(messages)
-        finally:
-            if llm is not None:
-                await llm.close()
+        with _phase(timing, "llm_gen"):
+            llm = None
+            try:
+                llm = self._get_llm_adapter(provider_name)
+                if stream:
+                    answer = ""
+                    async for token in llm.chat_stream(messages):
+                        answer += token
+                else:
+                    answer = await llm.chat(messages)
+            finally:
+                if llm is not None:
+                    await llm.close()
 
         # Hallucination check
-        is_risk, overlap = detect_hallucination(
-            answer, results,
-            entity_overlap_threshold=self.config.hallucination.entity_overlap_threshold,
-        )
-        risk_level = get_hallucination_risk_level(overlap)
+        with _phase(timing, "hallucination"):
+            is_risk, overlap = detect_hallucination(
+                answer, results,
+                entity_overlap_threshold=self.config.hallucination.entity_overlap_threshold,
+            )
+            risk_level = get_hallucination_risk_level(overlap)
+
+            # Optional LLM-based verification for high-risk answers
+            if (
+                self.config.hallucination.llm_verification
+                and risk_level == "high"
+                and llm is not None
+            ):
+                verification = await verify_factual_accuracy(answer, results, llm)
+                if not verification["is_accurate"]:
+                    logger.warning(
+                        "LLM verification flagged inaccuracies: %s",
+                        verification.get("issues", []),
+                    )
 
         # Extract sources
         sources = extract_sources_from_contexts(results)
 
         # Update semantic cache
-        if self.config.retrieval.semantic_cache.get("enabled", True):
-            self.semantic_cache.set(query_emb, answer, sources, kb_name=kb_name)
+        with _phase(timing, "cache_set"):
+            if self.config.retrieval.semantic_cache.get("enabled", True):
+                self.semantic_cache.set(query_emb, answer, sources, kb_name=kb_name)
 
-        latency = (time.time() - start_time) * 1000
+        timing["total"] = (time.time() - start_time) * 1000
+        _log_timing("chat", timing)
 
         return RAGResponse(
             answer=answer,
             sources=sources,
             hallucination_risk=risk_level,
-            latency_ms=latency,
+            latency_ms=timing["total"],
         )
 
     async def chat_stream(
@@ -418,11 +493,16 @@ class Pipeline:
         Yields:
             Dicts with 'type': 'token'|'sources'|'done'|'error'.
         """
+        timing: dict[str, float] = {}
         start_time = time.time()
 
         # Load BM25 index
+        t0 = time.perf_counter()
         index_path = self.bm25.index_dir / kb_name / "bm25.pkl"
         if not index_path.exists():
+            timing["bm25_load"] = (time.perf_counter() - t0) * 1000
+            timing["total"] = (time.time() - start_time) * 1000
+            _log_timing("chat_stream", timing)
             yield {
                 "type": "answer",
                 "content": "知识库为空，请先导入文档。",
@@ -431,10 +511,13 @@ class Pipeline:
             yield {
                 "type": "done",
                 "hallucination_risk": "low",
-                "latency_ms": (time.time() - start_time) * 1000,
+                "latency_ms": timing["total"],
             }
             return
         if not self.bm25.load(kb_name):
+            timing["bm25_load"] = (time.perf_counter() - t0) * 1000
+            timing["total"] = (time.time() - start_time) * 1000
+            _log_timing("chat_stream", timing)
             yield {
                 "type": "answer",
                 "content": "抱歉，BM25 索引损坏，请尝试重新导入文档。",
@@ -443,30 +526,42 @@ class Pipeline:
             yield {
                 "type": "done",
                 "hallucination_risk": "low",
-                "latency_ms": (time.time() - start_time) * 1000,
+                "latency_ms": timing["total"],
             }
             return
+        timing["bm25_load"] = (time.perf_counter() - t0) * 1000
 
         # Compute query embedding once for cache + retrieval
+        t0 = time.perf_counter()
         query_emb = self.embedder.encode_query(query)
+        timing["query_embed"] = (time.perf_counter() - t0) * 1000
 
         # Check semantic cache
+        t0 = time.perf_counter()
         if self.config.retrieval.semantic_cache.get("enabled", True):
             cached = self.semantic_cache.get(query_emb, kb_name=kb_name)
             if cached:
+                timing["cache_check"] = (time.perf_counter() - t0) * 1000
+                timing["total"] = (time.time() - start_time) * 1000
+                _log_timing("chat_stream", timing)
                 yield {"type": "answer", "content": cached["answer"]}
                 yield {"type": "sources", "sources": cached["sources"]}
                 yield {
                     "type": "done",
                     "hallucination_risk": "low",
-                    "latency_ms": (time.time() - start_time) * 1000,
+                    "latency_ms": timing["total"],
                 }
                 return
+        timing["cache_check"] = (time.perf_counter() - t0) * 1000
 
         # Hybrid search
+        t0 = time.perf_counter()
         results = self.retriever.retrieve(kb_name, query, query_embedding=query_emb)
+        timing["hybrid_search"] = (time.perf_counter() - t0) * 1000
 
         if not results:
+            timing["total"] = (time.time() - start_time) * 1000
+            _log_timing("chat_stream", timing)
             yield {
                 "type": "answer",
                 "content": "抱歉，在当前知识库中没有找到相关信息。请尝试更换关键词或导入相关文档。",
@@ -475,17 +570,22 @@ class Pipeline:
             yield {
                 "type": "done",
                 "hallucination_risk": "low",
-                "latency_ms": (time.time() - start_time) * 1000,
+                "latency_ms": timing["total"],
             }
             return
 
         # Rerank
+        t0 = time.perf_counter()
         results = self.reranker.rerank(query, results, top_n=self.config.retrieval.rerank_top_n)
+        timing["rerank"] = (time.perf_counter() - t0) * 1000
 
         # Build prompt
+        t0 = time.perf_counter()
         messages = build_messages(query, results, chat_history=chat_history)
+        timing["build_prompt"] = (time.perf_counter() - t0) * 1000
 
         # Generate streaming
+        t0 = time.perf_counter()
         llm = None
         try:
             llm = self._get_llm_adapter(provider_name)
@@ -496,23 +596,55 @@ class Pipeline:
         finally:
             if llm is not None:
                 await llm.close()
+        timing["llm_gen"] = (time.perf_counter() - t0) * 1000
 
         # Hallucination check
+        t0 = time.perf_counter()
         is_risk, overlap = detect_hallucination(
             full_answer, results,
             entity_overlap_threshold=self.config.hallucination.entity_overlap_threshold,
         )
+        risk_level = get_hallucination_risk_level(overlap)
+
+        # Optional LLM-based verification for high-risk answers (streaming:
+        # re-open a short-lived adapter for the verification call)
+        if (
+            self.config.hallucination.llm_verification
+            and risk_level == "high"
+        ):
+            verify_llm = None
+            try:
+                verify_llm = self._get_llm_adapter(provider_name)
+                verification = await verify_factual_accuracy(
+                    full_answer, results, verify_llm,
+                )
+                if not verification["is_accurate"]:
+                    logger.warning(
+                        "LLM verification flagged inaccuracies: %s",
+                        verification.get("issues", []),
+                    )
+            except Exception:
+                pass
+            finally:
+                if verify_llm is not None:
+                    await verify_llm.close()
+        timing["hallucination"] = (time.perf_counter() - t0) * 1000
 
         # Extract sources
         sources = extract_sources_from_contexts(results)
 
         # Update semantic cache
+        t0 = time.perf_counter()
         if self.config.retrieval.semantic_cache.get("enabled", True):
             self.semantic_cache.set(query_emb, full_answer, sources, kb_name=kb_name)
+        timing["cache_set"] = (time.perf_counter() - t0) * 1000
+
+        timing["total"] = (time.time() - start_time) * 1000
+        _log_timing("chat_stream", timing)
 
         yield {"type": "sources", "sources": sources}
         yield {
             "type": "done",
-            "hallucination_risk": get_hallucination_risk_level(overlap),
-            "latency_ms": (time.time() - start_time) * 1000,
+            "hallucination_risk": risk_level,
+            "latency_ms": timing["total"],
         }

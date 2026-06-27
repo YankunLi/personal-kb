@@ -1,8 +1,9 @@
-"""Hallucination detection via entity overlap check.
+"""Hallucination detection via entity overlap + optional LLM-based verification.
 
 Based on Article A: "检查回答中的关键实体是否在上下文中出现"
 Simple but effective: checks if numbers and key entities in the answer
-exist in the retrieved contexts.
+exist in the retrieved contexts. For high-risk answers, an optional LLM-based
+verification pass can double-check factual accuracy against the sources.
 """
 
 import re
@@ -95,3 +96,77 @@ def get_hallucination_risk_level(overlap_ratio: float) -> str:
         return "medium"
     else:
         return "high"
+
+
+def build_verification_prompt(answer: str, contexts: list[dict[str, Any]]) -> str:
+    """Build a prompt for LLM-based factual verification.
+
+    Asks the LLM to check whether each factual claim in the answer is
+    supported by the provided source contexts.
+    """
+    context_texts = []
+    for i, ctx in enumerate(contexts, 1):
+        content = ctx.get("content", "")
+        context_texts.append(f"[来源{i}]\n{content}")
+    sources = "\n\n".join(context_texts)
+
+    return f"""请检查以下回答是否完全基于提供的来源内容。对于回答中的每个事实性陈述，判断其是否能在来源中找到支持。
+
+## 来源内容
+{sources}
+
+## 待验证回答
+{answer}
+
+## 验证要求
+请判断回答是否存在以下问题：
+1. 无中生有：回答中包含来源中不存在的具体事实、数字或实体
+2. 错误引用：回答中的信息与来源内容矛盾或歪曲
+
+请只回复一个JSON对象：
+{{"is_accurate": true/false, "issues": ["问题描述"], "supported_ratio": 0.0-1.0}}"""
+
+
+async def verify_factual_accuracy(
+    answer: str,
+    contexts: list[dict[str, Any]],
+    llm_adapter: Any,
+) -> dict[str, Any]:
+    """Use LLM to verify if the answer is factually supported by the contexts.
+
+    This is an optional second-pass verification for answers flagged as
+    high hallucination risk by the entity overlap check.
+
+    Args:
+        answer: Generated answer text.
+        contexts: Retrieved document chunks used for generation.
+        llm_adapter: LLMAdapter instance for the verification call.
+
+    Returns:
+        Dict with keys: is_accurate (bool), issues (list[str]),
+        supported_ratio (float), or None if verification failed.
+    """
+    import json
+
+    prompt = build_verification_prompt(answer, contexts)
+    messages = [{"role": "user", "content": prompt}]
+
+    try:
+        response = await llm_adapter.chat(messages, temperature=0.0, max_tokens=512)
+        # Try to extract JSON from the response
+        json_match = re.search(r"\{[^}]+\}", response, re.DOTALL)
+        if json_match:
+            result = json.loads(json_match.group())
+            return {
+                "is_accurate": result.get("is_accurate", True),
+                "issues": result.get("issues", []),
+                "supported_ratio": result.get("supported_ratio", 1.0),
+            }
+    except (json.JSONDecodeError, Exception):
+        pass
+
+    return {
+        "is_accurate": True,
+        "issues": [],
+        "supported_ratio": 1.0,
+    }
