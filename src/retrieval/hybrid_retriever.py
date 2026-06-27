@@ -11,6 +11,7 @@ import numpy as np
 from src.embedding.embedder import Embedder
 from src.vector_store.bm25_index import BM25Index
 from src.vector_store.chroma_store import ChromaStore
+from src.retrieval.query_expander import expand_query
 
 
 class HybridRetriever:
@@ -48,10 +49,11 @@ class HybridRetriever:
     def sparse_search(
         self, query: str, top_k: int | None = None
     ) -> list[dict[str, Any]]:
-        """BM25 keyword search."""
+        """BM25 keyword search with automatic query expansion for short queries."""
         if top_k is None:
             top_k = self.sparse_top_k
-        return self.bm25.search(query, top_k=top_k)
+        expanded = expand_query(query)
+        return self.bm25.search(expanded, top_k=top_k)
 
     def hybrid_search(
         self,

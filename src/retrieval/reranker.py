@@ -2,10 +2,16 @@
 
 Based on Article A: "重排序可以让答案质量提升 15-30%"
 Based on Article B: "Re-rank 能再 +7-10%"
+
+Graceful degradation: if the reranker model fails to load or compute scores,
+the system falls back to raw retrieval scores instead of crashing.
 """
 
+import logging
 from typing import Any
 import threading
+
+logger = logging.getLogger(__name__)
 
 
 class Reranker:
@@ -13,6 +19,7 @@ class Reranker:
 
     Uses BGE-Reranker-v2-m3 (BAAI) for Chinese-optimized reranking.
     Lazily loaded to avoid loading the model if reranking is not used.
+    Falls back to raw retrieval scores on model failure.
     """
 
     def __init__(self, model_name: str = "BAAI/bge-reranker-v2-m3", model_revision: str = "main"):
@@ -20,19 +27,31 @@ class Reranker:
         self.model_revision = model_revision
         self._model: Any = None
         self._model_lock = threading.Lock()
+        self._load_failed = False
 
     @property
     def model(self):
-        """Lazy-load the reranker model (thread-safe)."""
-        if self._model is None:
+        """Lazy-load the reranker model (thread-safe).
+
+        Returns None if the model failed to load (graceful degradation).
+        """
+        if self._model is None and not self._load_failed:
             with self._model_lock:
-                if self._model is None:
-                    from FlagEmbedding import FlagReranker
-                    self._model = FlagReranker(
-                        self.model_name,
-                        use_fp16=True,
-                        revision=self.model_revision,
-                    )
+                if self._model is None and not self._load_failed:
+                    try:
+                        from FlagEmbedding import FlagReranker
+                        self._model = FlagReranker(
+                            self.model_name,
+                            use_fp16=True,
+                            revision=self.model_revision,
+                        )
+                    except Exception as e:
+                        self._load_failed = True
+                        logger.warning(
+                            "Failed to load reranker model '%s': %s. "
+                            "Falling back to raw retrieval scores.",
+                            self.model_name, e,
+                        )
         return self._model
 
     def rerank(
@@ -43,6 +62,8 @@ class Reranker:
     ) -> list[dict[str, Any]]:
         """Rerank documents using cross-encoder scoring.
 
+        Falls back to raw retrieval scores if the reranker model is unavailable.
+
         Args:
             query: User query string.
             documents: List of document dicts with 'content' key.
@@ -51,15 +72,28 @@ class Reranker:
         Returns:
             Top-n documents sorted by reranker score descending.
         """
+        # Ensure all documents have a baseline rerank_score
+        for doc in documents:
+            if "rerank_score" not in doc or doc.get("rerank_score") is None:
+                score = doc.get("score")
+                doc["rerank_score"] = float(score) if score is not None else 0.0
+
         if len(documents) <= top_n:
-            for doc in documents:
-                if "rerank_score" not in doc or doc.get("rerank_score") is None:
-                    score = doc.get("score")
-                    doc["rerank_score"] = float(score) if score is not None else 0.0
             return sorted(documents, key=lambda x: x.get("rerank_score", 0), reverse=True)
 
-        pairs = [[query, doc["content"]] for doc in documents]
-        scores = self.model.compute_score(pairs, normalize=True)
+        model = self.model
+        if model is None:
+            # Reranker unavailable, fall back to retrieval scores
+            return sorted(documents, key=lambda x: x.get("rerank_score", 0), reverse=True)[:top_n]
+
+        try:
+            pairs = [[query, doc["content"]] for doc in documents]
+            scores = model.compute_score(pairs, normalize=True)
+        except Exception as e:
+            logger.warning(
+                "Reranker inference failed: %s. Falling back to raw retrieval scores.", e
+            )
+            return sorted(documents, key=lambda x: x.get("rerank_score", 0), reverse=True)[:top_n]
 
         # compute_score returns a float for single pair, list for multiple
         if isinstance(scores, float):

@@ -26,6 +26,7 @@ class BM25Index:
         self._corpus: list[str] = []
         self._chunk_ids: list[str] = []
         self._metadatas: list[dict] = []
+        self._tokenized_corpus: list[list[str]] = []
         self._bm25: BM25Okapi | None = None
         self._loaded_kb: str | None = None
 
@@ -42,28 +43,32 @@ class BM25Index:
         self._corpus = []
         self._chunk_ids = []
         self._metadatas = []
+        self._tokenized_corpus = []
 
-        tokenized_corpus = []
         for chunk in chunks:
             content = chunk.get("content", "")
             self._corpus.append(content)
             self._chunk_ids.append(chunk["metadata"].get("chunk_id", ""))
             self._metadatas.append(chunk["metadata"])
-            tokenized_corpus.append(self._tokenize(content))
+            self._tokenized_corpus.append(self._tokenize(content))
 
-        self._bm25 = BM25Okapi(tokenized_corpus) if tokenized_corpus else None
+        self._bm25 = BM25Okapi(self._tokenized_corpus) if self._tokenized_corpus else None
 
     def add_chunks(self, chunks: list[dict[str, Any]]):
-        """Add new chunks to the existing BM25 index (rebuilds entirely).
+        """Add new chunks to the existing BM25 index.
 
-        For a personal KB with few documents, rebuilding is fast enough.
+        Only tokenizes the new chunks, avoiding costly re-tokenization of the
+        entire corpus. The BM25Okapi object is rebuilt from the extended
+        tokenized corpus (which is fast).
         """
-        all_chunks = [
-            {"content": c, "metadata": dict(m)}
-            for c, m in zip(self._corpus, self._metadatas)
-        ]
-        all_chunks.extend(chunks)
-        self.build(all_chunks)
+        for chunk in chunks:
+            content = chunk.get("content", "")
+            self._corpus.append(content)
+            self._chunk_ids.append(chunk["metadata"].get("chunk_id", ""))
+            self._metadatas.append(chunk["metadata"])
+            self._tokenized_corpus.append(self._tokenize(content))
+
+        self._bm25 = BM25Okapi(self._tokenized_corpus) if self._tokenized_corpus else None
 
     def search(
         self, query: str, top_k: int = 50
@@ -109,6 +114,7 @@ class BM25Index:
             "corpus": self._corpus,
             "chunk_ids": self._chunk_ids,
             "metadatas": self._metadatas,
+            "tokenized_corpus": self._tokenized_corpus,
         }
         with open(kb_dir / "bm25.pkl", "wb") as f:
             pickle.dump(data, f)
@@ -138,9 +144,13 @@ class BM25Index:
         self._metadatas = data["metadatas"]
         self._loaded_kb = kb_name
 
-        # Rebuild BM25 object from tokenized corpus
-        tokenized_corpus = [self._tokenize(c) for c in self._corpus]
-        self._bm25 = BM25Okapi(tokenized_corpus) if tokenized_corpus else None
+        # Restore cached tokenized corpus if available, otherwise tokenize
+        if "tokenized_corpus" in data:
+            self._tokenized_corpus = data["tokenized_corpus"]
+        else:
+            self._tokenized_corpus = [self._tokenize(c) for c in self._corpus]
+
+        self._bm25 = BM25Okapi(self._tokenized_corpus) if self._tokenized_corpus else None
 
         return True
 
@@ -149,6 +159,7 @@ class BM25Index:
         self._corpus = []
         self._chunk_ids = []
         self._metadatas = []
+        self._tokenized_corpus = []
         self._bm25 = None
         self._loaded_kb = None
 

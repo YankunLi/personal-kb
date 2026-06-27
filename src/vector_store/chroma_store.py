@@ -207,15 +207,29 @@ class ChromaStore:
         return output
 
     def get_existing_hashes(self, kb_name: str) -> set[str]:
-        """Get all content hashes currently in the collection (for dedup)."""
+        """Get all content hashes currently in the collection (for dedup).
+
+        Uses pagination to avoid loading all metadata into memory at once.
+        """
         collection = self.get_or_create_collection(kb_name)
-        results = collection.get(include=["metadatas"])
-        hashes = set()
-        if results["metadatas"]:
-            for meta in results["metadatas"]:
-                h = meta.get("content_hash", "")
-                if h:
-                    hashes.add(h)
+        total = collection.count()
+        hashes: set[str] = set()
+        offset = 0
+        batch_size = 1000
+
+        while offset < total:
+            results = collection.get(
+                offset=offset,
+                limit=batch_size,
+                include=["metadatas"],
+            )
+            if results["metadatas"]:
+                for meta in results["metadatas"]:
+                    h = meta.get("content_hash", "")
+                    if h:
+                        hashes.add(h)
+            offset += batch_size
+
         return hashes
 
     def count(self, kb_name: str) -> int:

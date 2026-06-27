@@ -23,24 +23,43 @@ class SemanticCache:
         # cache: list of (embedding, answer, sources, kb_name, timestamp)
         self._entries: list[tuple[np.ndarray, str, list, str, float]] = []
 
-    @staticmethod
-    def _cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
-        norm_product = np.linalg.norm(a) * np.linalg.norm(b)
-        if norm_product == 0:
-            return 0.0
-        return float(np.dot(a, b) / norm_product)
-
     def get(self, query_embedding: np.ndarray, kb_name: str = "default") -> dict[str, Any] | None:
         """Check if a similar query for the same KB is cached.
+
+        Uses vectorized dot product to compute all cosine similarities at once
+        instead of a linear scan with per-entry computation.
 
         Returns:
             Dict with 'answer', 'sources' if found, None otherwise.
         """
-        for emb, answer, sources, cached_kb, ts in self._entries:
-            if cached_kb != kb_name:
-                continue
-            if self._cosine_sim(query_embedding, emb) > self.threshold:
-                return {"answer": answer, "sources": sources}
+        # Filter entries for the target KB
+        kb_entries = [(i, e) for i, e in enumerate(self._entries) if e[3] == kb_name]
+        if not kb_entries:
+            return None
+
+        indices = [i for i, _ in kb_entries]
+        embeddings = np.stack([e[0] for _, e in kb_entries])
+
+        query_norm = np.linalg.norm(query_embedding)
+        if query_norm == 0:
+            return None
+
+        # Vectorized cosine similarity: (N x D) @ (D,) / (N,) / scalar
+        norms = np.linalg.norm(embeddings, axis=1)
+        # Guard against zero-norm embeddings (should not happen with normalized
+        # embeddings, but protects against corrupted cache entries)
+        valid = norms > 0
+        if not valid.any():
+            return None
+        sims = np.empty(len(embeddings))
+        sims[~valid] = -1.0  # Zero-norm entries cannot match
+        sims[valid] = np.dot(embeddings[valid], query_embedding) / (norms[valid] * query_norm)
+
+        best_local = int(np.argmax(sims))
+        if sims[best_local] > self.threshold:
+            _, answer, sources, _, _ = self._entries[indices[best_local]]
+            return {"answer": answer, "sources": sources}
+
         return None
 
     def set(

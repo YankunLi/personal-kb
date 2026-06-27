@@ -107,8 +107,12 @@ class Pipeline:
         recursive: bool = True,
         dry_run: bool = False,
         progress_callback=None,
+        batch_size: int = 50,
     ) -> dict[str, Any]:
         """Import documents into a knowledge base.
+
+        Processes documents in streaming batches to avoid accumulating all
+        chunks in memory for large imports.
 
         Args:
             path: File or directory path.
@@ -116,6 +120,7 @@ class Pipeline:
             recursive: Whether to recurse into subdirectories.
             dry_run: If True, show what would be imported without actually indexing.
             progress_callback: Optional callback for progress updates.
+            batch_size: Number of files to buffer before embedding + storing.
 
         Returns:
             Dict with import statistics.
@@ -136,7 +141,41 @@ class Pipeline:
         total_chunks = 0
         total_duplicates = 0
         files_with_new_chunks = 0
-        all_chunks = []
+        batch_chunks: list[dict[str, Any]] = []
+
+        # Clear semantic cache upfront before any data is added, so queries
+        # during the import don't get stale cached results from partial data.
+        self.semantic_cache.clear(kb_name)
+
+        def _flush_batch(batch: list[dict[str, Any]]):
+            """Embed + store a batch of chunks, updating BM25 index."""
+            if not batch:
+                return
+
+            if progress_callback:
+                progress_callback("embed", "", 0)
+
+            texts = [c["content"] for c in batch]
+            embeddings = self.embedder.encode_documents(texts, show_progress=False)
+
+            if progress_callback:
+                progress_callback("index", "", 0)
+
+            self.chroma.add_chunks(kb_name, batch, embeddings)
+
+            # Update BM25: load existing once, then add each batch incrementally
+            try:
+                if not self.bm25.load(kb_name):
+                    self.bm25.build(batch)
+                else:
+                    self.bm25.add_chunks(batch)
+                self.bm25.save(kb_name)
+            except Exception:
+                chunk_ids = [c["metadata"]["chunk_id"] for c in batch]
+                self.chroma.delete_by_ids(kb_name, chunk_ids)
+                if not self.bm25.load(kb_name):
+                    self.bm25.reset()
+                raise
 
         doc_iter, failed_counter = load_documents(path, recursive=recursive)
         for doc in doc_iter:
@@ -178,7 +217,12 @@ class Pipeline:
                 files_with_new_chunks += 1
 
             total_chunks += len(chunks)
-            all_chunks.extend(chunks)
+            batch_chunks.extend(chunks)
+
+            # Flush batch when we've accumulated enough files
+            if total_files % batch_size == 0 and batch_chunks:
+                _flush_batch(batch_chunks)
+                batch_chunks.clear()
 
         total_failed = failed_counter[0]  # Read after iterator is consumed
 
@@ -191,46 +235,18 @@ class Pipeline:
                 "dry_run": True,
             }
 
-        if not all_chunks:
+        # Flush remaining chunks
+        if batch_chunks:
+            _flush_batch(batch_chunks)
+            batch_chunks.clear()
+
+        if total_chunks == 0:
             return {
                 "files": total_files,
                 "chunks": 0,
                 "duplicates": total_duplicates,
                 "failed": total_failed,
             }
-
-        # Clear semantic cache for this KB since new data is being added
-        self.semantic_cache.clear(kb_name)
-
-        if progress_callback:
-            progress_callback("embed", "", 0)
-
-        # Embed all chunks
-        texts = [c["content"] for c in all_chunks]
-        embeddings = self.embedder.encode_documents(texts, show_progress=False)
-
-        if progress_callback:
-            progress_callback("index", "", 0)
-
-        # Store in ChromaDB
-        self.chroma.add_chunks(kb_name, all_chunks, embeddings)
-
-        # Rebuild BM25 index (load existing + add new)
-        try:
-            if not self.bm25.load(kb_name):
-                # No existing index, build from scratch with new chunks
-                self.bm25.build(all_chunks)
-            else:
-                self.bm25.add_chunks(all_chunks)
-            self.bm25.save(kb_name)
-        except Exception:
-            # Rollback ChromaDB chunks to avoid inconsistent state
-            chunk_ids = [c["metadata"]["chunk_id"] for c in all_chunks]
-            self.chroma.delete_by_ids(kb_name, chunk_ids)
-            # Reload BM25 from disk to clear stale in-memory state
-            if not self.bm25.load(kb_name):
-                self.bm25.reset()
-            raise
 
         # Update KB stats
         existing = self.kb_manager.get(kb_name)
