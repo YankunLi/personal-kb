@@ -35,15 +35,23 @@ class KBManager:
 
     def _load_registry(self) -> dict[str, KBInfo]:
         if self.registry_path.exists():
-            with open(self.registry_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            return {k: KBInfo.from_dict(v) for k, v in data.items()}
+            try:
+                with open(self.registry_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                return {k: KBInfo.from_dict(v) for k, v in data.items()}
+            except (json.JSONDecodeError, OSError) as e:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "KB registry corrupted (%s), starting with empty registry.", e
+                )
         return {}
 
     def _save_registry(self):
         data = {k: v.to_dict() for k, v in self._registry.items()}
-        with open(self.registry_path, "w", encoding="utf-8") as f:
+        tmp_path = self.registry_path.with_suffix(".tmp")
+        with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        tmp_path.replace(self.registry_path)
 
     def create(self, name: str, topic: str = "") -> KBInfo:
         """Create a new knowledge base.
