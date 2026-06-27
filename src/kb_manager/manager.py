@@ -160,8 +160,7 @@ class KBManager:
             except ValueError:
                 # Source collection has no data yet, just ensure target exists
                 self.chroma.get_or_create_collection(new_name)
-            finally:
-                chroma_copied = True
+            chroma_copied = True
 
             # Copy BM25 index
             old_bm25 = self.bm25.index_dir / old_name / "bm25.pkl"

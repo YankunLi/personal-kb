@@ -133,7 +133,8 @@ def _split_by_headings(text: str) -> list[tuple[str, str | None]]:
         start = m.end()
         end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
         section_text = text[start:end].strip()
-        heading = m.group(2).strip()
+        # Preserve heading level: "## Introduction" instead of just "Introduction"
+        heading = f"{m.group(1)} {m.group(2).strip()}"
         if section_text:
             sections.append((section_text, heading))
 
@@ -291,9 +292,10 @@ def chunk_document_semantic(
 
 def _prepend_heading(chunk: str, heading: str) -> str:
     """Prepend heading context to a chunk if not already present."""
-    if chunk.startswith("#"):
+    # Only skip if the heading text is already in the chunk
+    if heading in chunk:
         return chunk
-    return f"## {heading}\n{chunk}"
+    return f"{heading}\n{chunk}"
 
 
 def _add_overlap(chunks: list[str], overlap_chars: int) -> list[str]:
@@ -306,6 +308,6 @@ def _add_overlap(chunks: list[str], overlap_chars: int) -> list[str]:
         prev = chunks[i - 1]
         # Take the last `overlap_chars` characters from the previous chunk
         overlap_text = prev[-overlap_chars:] if len(prev) > overlap_chars else prev
-        result.append(f"(续上文)\n{overlap_text}\n...\n{chunks[i]}")
+        result.append(overlap_text + "\n" + chunks[i])
 
     return result

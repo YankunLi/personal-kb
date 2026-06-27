@@ -39,9 +39,12 @@ def expand_query(query: str, min_length: int = 5) -> str:
     """Expand a short query with extracted keywords for BM25.
 
     For queries shorter than `min_length` characters, extracts keywords
-    and appends them to help BM25 match more relevant documents.
-    Chinese queries of 5+ characters typically contain enough context
-    for effective BM25 retrieval without expansion.
+    and appends them to the original query to help BM25 match more
+    relevant documents. Chinese queries of 5+ characters typically
+    contain enough context for effective BM25 retrieval without expansion.
+
+    The original query is always preserved so that non-Chinese short
+    queries (e.g. "AI", "RAG") still get BM25 coverage.
 
     Args:
         query: User's original query string.
@@ -58,6 +61,5 @@ def expand_query(query: str, min_length: int = 5) -> str:
     if not keywords:
         return query
 
-    # For very short queries, use keywords directly as the sparse query
-    # For medium-length queries, append keywords
-    return " ".join(keywords)
+    # Append keywords to the original query for BM25
+    return query + " " + " ".join(keywords)

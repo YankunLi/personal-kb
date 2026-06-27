@@ -2,8 +2,6 @@
 
 import click
 
-from src.cli.pipeline import get_pipeline
-
 
 @click.group()
 @click.version_option(version="0.1.0", prog_name="kb")

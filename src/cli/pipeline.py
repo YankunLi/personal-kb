@@ -47,7 +47,6 @@ from src.generation.hallucination import (
 from src.kb_manager.manager import KBManager
 from src.source_tracking.tracker import (
     RAGResponse,
-    SourceInfo,
     extract_sources_from_contexts,
     format_sources_output,
 )
@@ -170,6 +169,7 @@ class Pipeline:
         files_with_new_chunks = 0
         batch_chunks: list[dict[str, Any]] = []
         import_timing: dict[str, float] = {"embed": 0.0, "index": 0.0}
+        bm25_loaded = False
 
         # Clear semantic cache upfront before any data is added, so queries
         # during the import don't get stale cached results from partial data.
@@ -177,6 +177,7 @@ class Pipeline:
 
         def _flush_batch(batch: list[dict[str, Any]]):
             """Embed + store a batch of chunks, updating BM25 index."""
+            nonlocal bm25_loaded
             if not batch:
                 return
 
@@ -194,18 +195,21 @@ class Pipeline:
             t0 = time.perf_counter()
             self.chroma.add_chunks(kb_name, batch, embeddings)
 
-            # Update BM25: load existing once, then add each batch incrementally
+            # Update BM25 incrementally: load once, add per batch, save once at end
             try:
-                if not self.bm25.load(kb_name):
-                    self.bm25.build(batch)
+                if not bm25_loaded:
+                    if not self.bm25.load(kb_name):
+                        self.bm25.build(batch)
+                    else:
+                        self.bm25.add_chunks(batch)
+                    bm25_loaded = True
                 else:
                     self.bm25.add_chunks(batch)
-                self.bm25.save(kb_name)
             except Exception:
                 chunk_ids = [c["metadata"]["chunk_id"] for c in batch]
                 self.chroma.delete_by_ids(kb_name, chunk_ids)
-                if not self.bm25.load(kb_name):
-                    self.bm25.reset()
+                # Rollback BM25 in-memory state: reload from last good save
+                self.bm25.load(kb_name)
                 raise
             finally:
                 import_timing["index"] += (time.perf_counter() - t0) * 1000
@@ -281,6 +285,10 @@ class Pipeline:
         if batch_chunks:
             _flush_batch(batch_chunks)
             batch_chunks.clear()
+
+        # Persist BM25 index once after all batches
+        if bm25_loaded:
+            self.bm25.save(kb_name)
 
         if total_chunks == 0:
             import_timing["total"] = (time.time() - start_time) * 1000

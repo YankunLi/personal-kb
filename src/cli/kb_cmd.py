@@ -1,9 +1,24 @@
 """kb kb command: knowledge base management (create, list, delete, use, info)."""
 
+import os
+import tempfile
+from pathlib import Path
+
 import click
 
 from src.cli.pipeline import get_pipeline
 from src.config.loader import load_config
+
+
+def _atomic_write_yaml(config_path: Path, config_data: dict) -> None:
+    """Write config data atomically using temp file + rename."""
+    from ruamel.yaml import YAML
+    yaml = YAML()
+    yaml.preserve_quotes = True
+    tmp_path = config_path.with_suffix(config_path.suffix + ".tmp")
+    with open(tmp_path, "w") as f:
+        yaml.dump(config_data, f)
+    os.replace(tmp_path, config_path)
 
 
 @click.group("kb")
@@ -101,8 +116,7 @@ def kb_use(name: str):
 
     config_data["defaults"]["kb"] = name
 
-    with open(config_path, "w") as f:
-        yaml.dump(config_data, f)
+    _atomic_write_yaml(config_path, config_data)
 
     click.echo(f"✅ 默认知识库已切换为 '{name}'")
 
@@ -160,7 +174,7 @@ def provider_list():
     click.echo("-" * 60)
     for key, prov in config.llm.providers.items():
         marker = " *" if key == default_provider else ""
-        has_key = "✅" if prov.api_key and not prov.api_key.startswith("${") and "xxx" not in prov.api_key.lower() else "❌"
+        has_key = "✅" if (prov.api_key and not prov.api_key.startswith("${") and "xxx" not in prov.api_key.lower()) else "❌"
         click.echo(f"{key + marker:<15} {prov.name:<20} {prov.model:<25} {has_key}")
 
 
@@ -192,7 +206,6 @@ def provider_use(name: str):
 
     config_data["defaults"]["provider"] = name
 
-    with open(config_path, "w") as f:
-        yaml.dump(config_data, f)
+    _atomic_write_yaml(config_path, config_data)
 
     click.echo(f"✅ 默认 LLM 已切换为 '{name}' ({config.llm.providers[name].name})")

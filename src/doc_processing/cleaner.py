@@ -48,14 +48,21 @@ def normalize_text(text: str) -> str:
     # Collapse multiple newlines (3+) to double newlines
     text = re.sub(r"\n{3,}", "\n\n", text)
 
-    # Collapse multiple spaces/tabs (preserving newlines)
-    text = re.sub(r"[ \t]+", " ", text)
-
-    # Strip leading/trailing whitespace per line
-    lines = [line.strip() for line in text.split("\n")]
+    # Collapse multiple spaces/tabs within lines, preserving indentation
+    lines = []
+    for line in text.split("\n"):
+        stripped = line.rstrip()
+        if stripped:
+            # Preserve leading whitespace, collapse internal spaces
+            leading = stripped[:len(stripped) - len(stripped.lstrip())]
+            content = stripped.lstrip()
+            content = re.sub(r"[ \t]+", " ", content)
+            lines.append(leading + content)
+        else:
+            lines.append("")
     text = "\n".join(lines)
 
-    # Second pass: collapse newly-formed empty lines (3+) after per-line strip
+    # Second pass: collapse newly-formed empty lines (3+) after per-line processing
     text = re.sub(r"\n{3,}", "\n\n", text)
 
     # Remove empty lines at start and end
