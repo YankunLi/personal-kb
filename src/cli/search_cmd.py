@@ -36,7 +36,11 @@ def search_cmd(query: str, kb_name: str, top_k: int, show_scores: bool):
         metadata = result.get("metadata", {})
         source_file = metadata.get("source_file_basename", "未知")
         section = metadata.get("section", "")
-        score = result.get("rerank_score", result.get("score", 0))
+        score = result.get("rerank_score")
+        if score is None:
+            score = result.get("score", 0)
+        if score is None:
+            score = 0.0
         content = result.get("content", "")
 
         click.echo(f"── 结果 {i} ──")
