@@ -55,26 +55,26 @@ class LLMAdapter:
             if self._oauth_token and time.time() < self._oauth_token_expiry - 60:
                 return self._oauth_token
 
-        url = "https://aip.baidubce.com/oauth/2.0/token"
-        params = {
-            "grant_type": "client_credentials",
-            "client_id": self.provider.api_key,
-            "client_secret": self.provider.api_key,
-        }
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
-            resp = await client.post(url, params=params)
-            resp.raise_for_status()
-            data = resp.json()
-            token = data.get("access_token")
-            if not token:
-                error_keys = {k for k in data if k not in ("access_token", "expires_in", "token_type")}
-                raise RuntimeError(
-                    f"OAuth token endpoint returned no access_token. "
-                    f"Response keys: {sorted(error_keys) if error_keys else 'none'}"
-                )
-            self._oauth_token = token
-            self._oauth_token_expiry = time.time() + data.get("expires_in", 86400)
-            return self._oauth_token
+            url = "https://aip.baidubce.com/oauth/2.0/token"
+            params = {
+                "grant_type": "client_credentials",
+                "client_id": self.provider.api_key,
+                "client_secret": self.provider.api_key,
+            }
+            async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
+                resp = await client.post(url, params=params)
+                resp.raise_for_status()
+                data = resp.json()
+                token = data.get("access_token")
+                if not token:
+                    error_keys = {k for k in data if k not in ("access_token", "expires_in", "token_type")}
+                    raise RuntimeError(
+                        f"OAuth token endpoint returned no access_token. "
+                        f"Response keys: {sorted(error_keys) if error_keys else 'none'}"
+                    )
+                self._oauth_token = token
+                self._oauth_token_expiry = time.time() + data.get("expires_in", 86400)
+                return self._oauth_token
 
     @property
     def client(self) -> httpx.AsyncClient:

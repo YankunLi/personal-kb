@@ -366,6 +366,12 @@ class Pipeline:
         if not self.kb_manager.exists(kb_name):
             raise ValueError(f"Knowledge base '{kb_name}' does not exist. Create it with 'kb kb create {kb_name}' or import documents.")
 
+        # Validate query
+        if not query or not query.strip():
+            return []
+        if len(query) > 4096:
+            return []
+
         # Load BM25 index for this KB
         if not self.bm25.has_index(kb_name):
             return []
