@@ -13,3 +13,4 @@ class LLMProviderConfig(BaseModel):
     model: str          # Model name
     api_key: str        # API key or OAuth client_id
     auth_type: str = "bearer"  # "bearer" (default) or "oauth" for Baidu ERNIE
+    client_secret: str = ""    # OAuth client secret; defaults to api_key if empty

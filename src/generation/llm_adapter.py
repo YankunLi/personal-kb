@@ -59,7 +59,7 @@ class LLMAdapter:
             params = {
                 "grant_type": "client_credentials",
                 "client_id": self.provider.api_key,
-                "client_secret": self.provider.api_key,
+                "client_secret": self.provider.client_secret or self.provider.api_key,
             }
             async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
                 resp = await client.post(url, params=params)
