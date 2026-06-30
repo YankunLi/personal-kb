@@ -184,6 +184,8 @@ def kb_rename(old_name: str, new_name: str):
         click.echo(f"✅ 知识库 '{old_name}' 已重命名为 '{new_name}'")
     except ValueError as e:
         click.echo(f"❌ {e}")
+    except RuntimeError as e:
+        click.echo(f"❌ 重命名失败: {e}")
 
 
 # Provider commands

@@ -175,12 +175,25 @@ class KBManager:
         all copies succeed.
 
         Raises:
-            ValueError: If old_name doesn't exist or new_name already exists.
+            ValueError: If old_name doesn't exist, new_name already exists,
+                or new_name contains invalid characters.
+            RuntimeError: If data copy fails (rolled back internally).
         """
         if old_name not in self._registry:
             raise ValueError(f"Knowledge base '{old_name}' does not exist")
         if new_name in self._registry:
             raise ValueError(f"Knowledge base '{new_name}' already exists")
+
+        # Validate new_name against BM25's allowed character set (same as create).
+        import re
+        if not re.match(r"^[a-zA-Z0-9\u4e00-\u9fff][a-zA-Z0-9\u4e00-\u9fff_.-]*$", new_name):
+            raise ValueError(
+                f"Invalid KB name: {new_name!r}. "
+                "Must start with alphanumeric or Chinese char, "
+                "contain only alphanumeric, Chinese, underscores, dots, or hyphens."
+            )
+        if ".." in new_name:
+            raise ValueError(f"Path traversal detected in KB name: {new_name!r}")
 
         # Phase 1: Copy all data to new name
         chroma_copied = False
