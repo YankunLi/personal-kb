@@ -118,6 +118,11 @@ class Pipeline:
         )
         self.deduplicator = ChunkDeduplicator()
 
+        # Cached LLM adapter for reuse across chat turns. Avoids creating a
+        # new httpx client (TCP + DNS + TLS) on every turn in the chat REPL.
+        self._cached_llm: LLMAdapter | None = None
+        self._cached_llm_name: str | None = None
+
     def _get_llm_adapter(self, provider_name: str | None = None) -> LLMAdapter:
         """Get LLM adapter for the specified or default provider."""
         name = provider_name or self.config.defaults.provider
@@ -131,6 +136,28 @@ class Pipeline:
             max_retries=self.config.llm.retry.max_attempts,
             backoff_seconds=self.config.llm.retry.backoff_seconds,
         )
+
+    def _get_cached_llm_adapter(self, provider_name: str | None = None) -> LLMAdapter:
+        """Get or create a cached LLM adapter reused across chat turns.
+
+        The httpx client (TCP + DNS + TLS) is created once and kept alive
+        for the duration of the chat session, avoiding per-turn overhead
+        of ~100-300ms for connection establishment.
+        """
+        name = provider_name or self.config.defaults.provider
+        if self._cached_llm is not None and self._cached_llm_name == name:
+            return self._cached_llm
+        # Provider changed or first call: create a new adapter
+        self._cached_llm = self._get_llm_adapter(name)
+        self._cached_llm_name = name
+        return self._cached_llm
+
+    async def close(self):
+        """Close the cached LLM adapter. Safe to call multiple times."""
+        if self._cached_llm is not None:
+            await self._cached_llm.close()
+            self._cached_llm = None
+            self._cached_llm_name = None
 
     def import_documents(
         self,
@@ -518,9 +545,8 @@ class Pipeline:
 
         # Generate
         with _phase(timing, "llm_gen"):
-            llm = None
             try:
-                llm = self._get_llm_adapter(provider_name)
+                llm = self._get_cached_llm_adapter(provider_name)
                 if stream:
                     answer = ""
                     async for token in llm.chat_stream(messages):
@@ -528,8 +554,9 @@ class Pipeline:
                 else:
                     answer = await llm.chat(messages)
             finally:
-                if llm is not None:
-                    await llm.close()
+                # Cached adapter is NOT closed here — it's reused across turns.
+                # Call pipeline.close() to clean it up when the session ends.
+                pass
 
         # Hallucination check
         with _phase(timing, "hallucination"):
@@ -739,16 +766,16 @@ class Pipeline:
 
         # Generate streaming
         t0 = time.perf_counter()
-        llm = None
         try:
-            llm = self._get_llm_adapter(provider_name)
+            llm = self._get_cached_llm_adapter(provider_name)
             full_answer = ""
             async for token in llm.chat_stream(messages):
                 full_answer += token
                 yield {"type": "token", "content": token}
         finally:
-            if llm is not None:
-                await llm.close()
+            # Cached adapter is NOT closed here — it's reused across turns.
+            # Call pipeline.close() to clean it up when the session ends.
+            pass
         timing["llm_gen"] = (time.perf_counter() - t0) * 1000
 
         # Hallucination check

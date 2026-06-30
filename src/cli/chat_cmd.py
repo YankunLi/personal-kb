@@ -114,6 +114,7 @@ def chat_cmd(kb_name: str, provider_name: str, no_stream: bool):
             loop.run_until_complete(_do_chat(pipeline, query, kb_name, provider_name, chat_history, last_sources, no_stream))
             click.echo()
     finally:
+        loop.run_until_complete(pipeline.close())
         loop.close()
 
 
@@ -191,4 +192,12 @@ def ask_cmd(query: str, kb_name: str, provider_name: str, no_stream: bool):
         kb_name = pipeline.config.defaults.kb
 
     click.echo(f"🔍 在知识库 '{kb_name}' 中查询...\n")
-    asyncio.run(_do_chat(pipeline, query, kb_name, provider_name, [], [], no_stream))
+    asyncio.run(_ask_inner(pipeline, query, kb_name, provider_name, no_stream))
+
+
+async def _ask_inner(pipeline, query, kb_name, provider_name, no_stream):
+    """Run a single Q&A turn and clean up the cached LLM adapter."""
+    try:
+        await _do_chat(pipeline, query, kb_name, provider_name, [], [], no_stream)
+    finally:
+        await pipeline.close()
