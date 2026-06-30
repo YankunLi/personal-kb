@@ -156,11 +156,16 @@ async def _do_chat(pipeline, query, kb_name, provider_name, chat_history, last_s
 
             chat_history.append({"role": "user", "content": query})
             chat_history.append({"role": "assistant", "content": full_answer})
+
+        # Cap chat history to last 20 turns (40 messages) to prevent unbounded
+        # memory growth in long-running interactive sessions.
+        if len(chat_history) > 40:
+            chat_history[:] = chat_history[-40:]
     except KeyboardInterrupt:
         click.echo("\n⏸️  已取消")
     except Exception as e:
         logger.warning("Chat error: %s", e, exc_info=True)
-        click.echo("\n❌ 对话出错，请稍后重试")
+        click.echo(f"\n❌ 对话出错: {e}")
         # Don't add failed query to history
 
 

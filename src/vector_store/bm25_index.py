@@ -113,13 +113,16 @@ class BM25Index:
         self._bm25 = BM25Okapi(self._tokenized_corpus) if self._tokenized_corpus else None
 
     def search(
-        self, query: str, top_k: int = 50
+        self, query: str, top_k: int = 50, kb_name: str | None = None
     ) -> list[dict[str, Any]]:
         """Search the BM25 index for relevant chunks.
 
         Args:
             query: Search query string.
             top_k: Number of results to return.
+            kb_name: Expected KB name. If set, verifies the loaded index
+                matches this KB to prevent serving stale state under
+                concurrent access.
 
         Returns:
             List of result dicts with 'id', 'content', 'metadata', 'score'.
@@ -128,6 +131,18 @@ class BM25Index:
             return []
 
         if not query or not query.strip():
+            return []
+
+        # Guard: verify the loaded index matches the expected KB to prevent
+        # serving stale state when BM25Index is shared across concurrent
+        # operations.
+        if kb_name is not None and self._loaded_kb is not None and self._loaded_kb != kb_name:
+            import logging
+            logging.getLogger(__name__).warning(
+                "BM25 index mismatch: loaded '%s' but expected '%s'. "
+                "Call load('%s') first.",
+                self._loaded_kb, kb_name, kb_name,
+            )
             return []
 
         tokenized_query = self._tokenize(query)
@@ -159,6 +174,13 @@ class BM25Index:
         """Persist the BM25 index to disk."""
         kb_dir = self._kb_dir(kb_name)
         kb_dir.mkdir(parents=True, exist_ok=True)
+
+        # Guard: prevent saving under a different KB name than what is loaded.
+        if self._loaded_kb is not None and self._loaded_kb != kb_name:
+            raise RuntimeError(
+                f"Cannot save BM25 index: loaded KB '{self._loaded_kb}' "
+                f"does not match target '{kb_name}'. Load the correct KB first."
+            )
 
         data = {
             "corpus": self._corpus,

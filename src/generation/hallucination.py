@@ -12,7 +12,7 @@ from typing import Any
 
 def extract_numbers(text: str) -> set[str]:
     """Extract numbers (including percentages) from text."""
-    return set(re.findall(r"\d+\.?\d*%?", text))
+    return set(re.findall(r"\b\d+\.?\d*%?\b", text))
 
 
 def extract_entities(text: str, min_length: int = 2) -> set[str]:
@@ -154,7 +154,7 @@ async def verify_factual_accuracy(
     try:
         response = await llm_adapter.chat(messages, temperature=0.0, max_tokens=512)
         # Extract JSON object, handling nested braces
-        json_match = re.search(r"\{.*\}", response, re.DOTALL)
+        json_match = re.search(r"\{.*?\}", response, re.DOTALL)
         if json_match:
             result = json.loads(json_match.group())
             return {

@@ -35,7 +35,7 @@ class ChromaStore:
         # Must start and end with alphanumeric.
         # Append a hash of the original name to prevent collisions between
         # names that differ only in non-allowed characters.
-        name_hash = hashlib.md5(kb_name.encode()).hexdigest()[:8]
+        name_hash = hashlib.md5(kb_name.encode(), usedforsecurity=False).hexdigest()[:8]
         safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in kb_name)
         safe = safe.strip("_-.")
         if not safe:

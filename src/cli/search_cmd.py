@@ -21,6 +21,9 @@ def search_cmd(query: str, kb_name: str, top_k: int, show_scores: bool):
 
     try:
         results = pipeline.search(query, kb_name=kb_name, top_k=top_k)
+    except ValueError as e:
+        click.echo(f"❌ {e}")
+        return
     except KeyboardInterrupt:
         click.echo("\n⏸️  已取消")
         return

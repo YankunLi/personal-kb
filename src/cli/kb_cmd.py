@@ -7,7 +7,7 @@ from pathlib import Path
 import click
 
 from src.cli.pipeline import get_pipeline
-from src.config.loader import load_config
+from src.config.loader import get_project_root, load_config
 
 
 def _atomic_write_yaml(config_path: Path, config_data: dict) -> None:
@@ -23,6 +23,21 @@ def _atomic_write_yaml(config_path: Path, config_data: dict) -> None:
     with open(fd, "w") as f:
         yaml.dump(config_data, f)
     os.replace(tmp_path, config_path)
+
+
+def _maybe_update_default_kb_config(old_name: str, new_name: str):
+    """If ``old_name`` is the default KB, update config.yaml to point to ``new_name``."""
+    config = load_config()
+    if config.defaults.kb == old_name:
+        from ruamel.yaml import YAML
+        config_path = get_project_root() / "config.yaml"
+        yaml = YAML()
+        yaml.preserve_quotes = True
+        with open(config_path, "r") as f:
+            config_data = yaml.load(f)
+        if config_data and "defaults" in config_data:
+            config_data["defaults"]["kb"] = new_name
+            _atomic_write_yaml(config_path, config_data)
 
 
 @click.group("kb")
@@ -163,6 +178,9 @@ def kb_rename(old_name: str, new_name: str):
         # left under the new name from a prior incarnation.
         pipeline.semantic_cache.clear(old_name)
         pipeline.semantic_cache.clear(new_name)
+        # If the renamed KB was the config default, update config.yaml so
+        # future sessions use the new name automatically.
+        _maybe_update_default_kb_config(old_name, new_name)
         click.echo(f"✅ 知识库 '{old_name}' 已重命名为 '{new_name}'")
     except ValueError as e:
         click.echo(f"❌ {e}")

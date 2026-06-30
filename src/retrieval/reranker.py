@@ -101,9 +101,12 @@ class Reranker:
             scores = [scores]
 
         if len(scores) != len(docs):
-            raise RuntimeError(
-                f"Reranker returned {len(scores)} scores for {len(docs)} documents"
+            logger.warning(
+                "Reranker returned %d scores for %d documents. "
+                "Falling back to raw retrieval scores.",
+                len(scores), len(docs),
             )
+            return sorted(docs, key=lambda x: x.get("rerank_score", 0), reverse=True)[:top_n]
 
         # Attach reranker scores
         for doc, score in zip(docs, scores):

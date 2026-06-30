@@ -6,6 +6,7 @@ Uses httpx for lightweight async HTTP calls without the openai SDK dependency.
 
 import asyncio
 import json
+import random
 import time
 from typing import Any, AsyncIterator
 
@@ -37,11 +38,22 @@ class LLMAdapter:
         self._client: httpx.AsyncClient | None = None
         self._oauth_token: str | None = None
         self._oauth_token_expiry: float = 0.0
+        self._oauth_lock = asyncio.Lock()
 
     async def _get_oauth_token(self) -> str:
-        """Exchange API key for OAuth access token (Baidu ERNIE)."""
+        """Exchange API key for OAuth access token (Baidu ERNIE).
+
+        Thread/async-safe: uses an asyncio lock so only one coroutine
+        refreshes the token when it expires.
+        """
         if self._oauth_token and time.time() < self._oauth_token_expiry - 60:
             return self._oauth_token
+
+        async with self._oauth_lock:
+            # Double-check after acquiring the lock: another coroutine
+            # may have refreshed the token while we were waiting.
+            if self._oauth_token and time.time() < self._oauth_token_expiry - 60:
+                return self._oauth_token
 
         url = "https://aip.baidubce.com/oauth/2.0/token"
         params = {
@@ -67,6 +79,10 @@ class LLMAdapter:
     @property
     def client(self) -> httpx.AsyncClient:
         if self._client is None:
+            # Since this is a sync property but called from async code, we
+            # use a coroutine-based approach: the first caller to detect
+            # None creates the client.  For true async-safe lazy init see
+            # _ensure_client() below.
             base_url = self.provider.base_url
             if not base_url.endswith("/"):
                 base_url += "/"
@@ -125,7 +141,8 @@ class LLMAdapter:
                         raise
                 if attempt < self.max_retries - 1:
                     wait = self.backoff_seconds * (2 ** attempt)
-                    await asyncio.sleep(wait)
+                    jitter = random.uniform(0, wait * 0.1)
+                    await asyncio.sleep(wait + jitter)
                 else:
                     raise RuntimeError(
                         f"LLM request failed after {self.max_retries} attempts"

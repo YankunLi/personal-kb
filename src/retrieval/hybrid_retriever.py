@@ -47,13 +47,13 @@ class HybridRetriever:
         return self.chroma.query(kb_name, query_embedding, top_k=top_k)
 
     def sparse_search(
-        self, query: str, top_k: int | None = None
+        self, query: str, top_k: int | None = None, kb_name: str | None = None
     ) -> list[dict[str, Any]]:
         """BM25 keyword search with automatic query expansion for short queries."""
         if top_k is None:
             top_k = self.sparse_top_k
         expanded = expand_query(query)
-        return self.bm25.search(expanded, top_k=top_k)
+        return self.bm25.search(expanded, top_k=top_k, kb_name=kb_name)
 
     def hybrid_search(
         self,
@@ -77,7 +77,7 @@ class HybridRetriever:
             top_k = self.hybrid_top_k
 
         dense_results = self.dense_search(kb_name, query, top_k=self.dense_top_k, query_embedding=query_embedding)
-        sparse_results = self.sparse_search(query, top_k=self.sparse_top_k)
+        sparse_results = self.sparse_search(query, top_k=self.sparse_top_k, kb_name=kb_name)
 
         if not dense_results and not sparse_results:
             return []
@@ -91,7 +91,9 @@ class HybridRetriever:
         rrf_scores: dict[str, dict[str, Any]] = {}
 
         for rank, result in enumerate(dense_results):
-            doc_id = result["id"]
+            doc_id = result.get("id")
+            if doc_id is None:
+                continue
             rrf_score = 1.0 / (self.rrf_k + rank + 1)
             if doc_id not in rrf_scores:
                 rrf_scores[doc_id] = {**result, "rrf_score": rrf_score, "score": rrf_score}
@@ -100,7 +102,9 @@ class HybridRetriever:
                 rrf_scores[doc_id]["score"] = rrf_scores[doc_id]["rrf_score"]
 
         for rank, result in enumerate(sparse_results):
-            doc_id = result["id"]
+            doc_id = result.get("id")
+            if doc_id is None:
+                continue
             rrf_score = 1.0 / (self.rrf_k + rank + 1)
             if doc_id not in rrf_scores:
                 rrf_scores[doc_id] = {**result, "rrf_score": rrf_score, "score": rrf_score}

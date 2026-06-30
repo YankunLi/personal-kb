@@ -215,115 +215,136 @@ class Pipeline:
                 # can always reload from the last good state.
                 self.bm25.save(kb_name)
             except Exception:
-                chunk_ids = [c["metadata"]["chunk_id"] for c in batch]
-                self.chroma.delete_by_ids(kb_name, chunk_ids)
+                # Rollback: undo the just-added ChromaDB chunks. If this
+                # deletion fails, log it and continue with BM25 reload so
+                # we at least restore in-memory consistency.
+                try:
+                    chunk_ids = [c["metadata"]["chunk_id"] for c in batch]
+                    self.chroma.delete_by_ids(kb_name, chunk_ids)
+                except Exception as rollback_e:
+                    logger.error(
+                        "Failed to roll back ChromaDB chunks during import: %s",
+                        rollback_e,
+                    )
                 # Rollback BM25 in-memory state: reload from last good checkpoint
                 if not self.bm25.load(kb_name):
                     self.bm25.reset()
+                # Rollback resets the loaded-state flag so the next batch
+                # (if any) re-loads from scratch instead of assuming the
+                # in-memory state is valid.
+                bm25_loaded = False
                 raise
             finally:
                 import_timing["index"] += (time.perf_counter() - t0) * 1000
 
-        doc_iter, failed_counter = load_documents(path, recursive=recursive)
-        for doc in doc_iter:
-            total_files += 1
-            file_path = doc["file_path"]
+        try:
+            doc_iter, failed_counter = load_documents(path, recursive=recursive)
+            for doc in doc_iter:
+                total_files += 1
+                file_path = doc["file_path"]
 
-            if progress_callback:
-                progress_callback("parse", file_path, total_files)
+                if progress_callback:
+                    progress_callback("parse", file_path, total_files)
+
+                if dry_run:
+                    continue
+
+                # Build base metadata
+                base_meta = build_base_metadata(
+                    file_path=file_path,
+                    kb_name=kb_name,
+                    embedding_model=self.config.embedding.model_name,
+                    embedding_dim=self.config.embedding.dimensions,
+                )
+
+                # Chunk the document
+                if self.config.chunking.chunk_method == "semantic":
+                    chunks = chunk_document_semantic(
+                        doc["text"],
+                        metadata=None,
+                        chunk_size=self.config.chunking.chunk_size,
+                        chunk_overlap=self.config.chunking.chunk_overlap,
+                        min_chunk_size=self.config.chunking.min_chunk_size,
+                    )
+                else:
+                    chunks = chunk_document(
+                        doc["text"],
+                        metadata=None,
+                        chunk_size=self.config.chunking.chunk_size,
+                        chunk_overlap=self.config.chunking.chunk_overlap,
+                        separators=self.config.chunking.separators,
+                    )
+
+                # Enrich with metadata
+                chunks = enrich_chunks(chunks, base_meta)
+
+                # Deduplicate
+                if self.config.chunking.enable_deduplication:
+                    chunks, dups = self.deduplicator.deduplicate(chunks)
+                    total_duplicates += dups
+
+                if len(chunks) > 0:
+                    files_with_new_chunks += 1
+
+                total_chunks += len(chunks)
+                batch_chunks.extend(chunks)
+
+                # Flush batch when we've accumulated enough files
+                if total_files % batch_size == 0 and batch_chunks:
+                    _flush_batch(batch_chunks)
+                    batch_chunks.clear()
+
+            total_failed = failed_counter[0]  # Read after iterator is consumed
 
             if dry_run:
-                continue
+                return {
+                    "files": total_files,
+                    "chunks": 0,
+                    "duplicates": 0,
+                    "failed": total_failed,
+                    "dry_run": True,
+                }
 
-            # Build base metadata
-            base_meta = build_base_metadata(
-                file_path=file_path,
-                kb_name=kb_name,
-                embedding_model=self.config.embedding.model_name,
-                embedding_dim=self.config.embedding.dimensions,
-            )
-
-            # Chunk the document
-            if self.config.chunking.chunk_method == "semantic":
-                chunks = chunk_document_semantic(
-                    doc["text"],
-                    metadata=None,
-                    chunk_size=self.config.chunking.chunk_size,
-                    chunk_overlap=self.config.chunking.chunk_overlap,
-                    min_chunk_size=self.config.chunking.min_chunk_size,
-                )
-            else:
-                chunks = chunk_document(
-                    doc["text"],
-                    metadata=None,
-                    chunk_size=self.config.chunking.chunk_size,
-                    chunk_overlap=self.config.chunking.chunk_overlap,
-                    separators=self.config.chunking.separators,
-                )
-
-            # Enrich with metadata
-            chunks = enrich_chunks(chunks, base_meta)
-
-            # Deduplicate
-            if self.config.chunking.enable_deduplication:
-                chunks, dups = self.deduplicator.deduplicate(chunks)
-                total_duplicates += dups
-
-            if len(chunks) > 0:
-                files_with_new_chunks += 1
-
-            total_chunks += len(chunks)
-            batch_chunks.extend(chunks)
-
-            # Flush batch when we've accumulated enough files
-            if total_files % batch_size == 0 and batch_chunks:
+            # Flush remaining chunks
+            if batch_chunks:
                 _flush_batch(batch_chunks)
                 batch_chunks.clear()
 
-        total_failed = failed_counter[0]  # Read after iterator is consumed
+            if total_chunks == 0:
+                import_timing["total"] = (time.time() - start_time) * 1000
+                _log_timing("import", import_timing)
+                return {
+                    "files": total_files,
+                    "chunks": 0,
+                    "duplicates": total_duplicates,
+                    "failed": total_failed,
+                }
 
-        if dry_run:
-            return {
-                "files": total_files,
-                "chunks": 0,
-                "duplicates": 0,
-                "failed": total_failed,
-                "dry_run": True,
-            }
+            # Update KB stats
+            existing = self.kb_manager.get(kb_name)
+            try:
+                new_chunk_count = self.chroma.count(kb_name)
+            except Exception:
+                logger.warning("Failed to query chunk count for '%s'; stats may be stale.", kb_name, exc_info=True)
+                new_chunk_count = existing.chunk_count
+            self.kb_manager.update_stats(
+                kb_name,
+                chunk_count=new_chunk_count,
+                file_count=existing.file_count + files_with_new_chunks,
+            )
 
-        # Flush remaining chunks
-        if batch_chunks:
-            _flush_batch(batch_chunks)
-            batch_chunks.clear()
-
-        if total_chunks == 0:
             import_timing["total"] = (time.time() - start_time) * 1000
             _log_timing("import", import_timing)
+
             return {
                 "files": total_files,
-                "chunks": 0,
+                "chunks": total_chunks,
                 "duplicates": total_duplicates,
                 "failed": total_failed,
             }
-
-        # Update KB stats
-        existing = self.kb_manager.get(kb_name)
-        new_chunk_count = self.chroma.count(kb_name)
-        self.kb_manager.update_stats(
-            kb_name,
-            chunk_count=new_chunk_count,
-            file_count=existing.file_count + files_with_new_chunks,
-        )
-
-        import_timing["total"] = (time.time() - start_time) * 1000
-        _log_timing("import", import_timing)
-
-        return {
-            "files": total_files,
-            "chunks": total_chunks,
-            "duplicates": total_duplicates,
-            "failed": total_failed,
-        }
+        except Exception:
+            logger.error("Import failed after processing %d files, %d chunks", total_files, total_chunks, exc_info=True)
+            raise
 
     def search(
         self,
@@ -341,6 +362,10 @@ class Pipeline:
         Returns:
             List of result dicts with content, metadata, scores.
         """
+        # Verify KB exists in registry first
+        if not self.kb_manager.exists(kb_name):
+            raise ValueError(f"Knowledge base '{kb_name}' does not exist. Create it with 'kb kb create {kb_name}' or import documents.")
+
         # Load BM25 index for this KB
         if not self.bm25.has_index(kb_name):
             return []
@@ -378,13 +403,28 @@ class Pipeline:
         Returns:
             RAGResponse with answer, sources, and metadata.
         """
+        # Validate query length to prevent abuse / OOM on embedding
+        if not query or not query.strip():
+            return RAGResponse(
+                answer="请输入有效的问题。",
+                sources=[],
+                hallucination_risk="low",
+                latency_ms=0.0,
+            )
+        if len(query) > 4096:
+            return RAGResponse(
+                answer=f"问题过长（{len(query)}字符），请精简到4096字符以内。",
+                sources=[],
+                hallucination_risk="low",
+                latency_ms=0.0,
+            )
         timing: dict[str, float] = {}
-        start_time = time.time()
+        start_time = time.perf_counter()
 
         # Load BM25 index for this KB
         with _phase(timing, "bm25_load"):
             if not self.bm25.has_index(kb_name):
-                timing["total"] = (time.time() - start_time) * 1000
+                timing["total"] = (time.perf_counter() - start_time) * 1000
                 _log_timing("chat", timing)
                 return RAGResponse(
                     answer="知识库为空，请先导入文档。",
@@ -393,7 +433,7 @@ class Pipeline:
                     latency_ms=timing["total"],
                 )
             if not self.bm25.load(kb_name):
-                timing["total"] = (time.time() - start_time) * 1000
+                timing["total"] = (time.perf_counter() - start_time) * 1000
                 _log_timing("chat", timing)
                 return RAGResponse(
                     answer="抱歉，BM25 索引损坏，请尝试重新导入文档。",
@@ -411,7 +451,7 @@ class Pipeline:
             if self.config.retrieval.semantic_cache.get("enabled", True):
                 cached = self.semantic_cache.get(query_emb, kb_name=kb_name)
                 if cached:
-                    timing["total"] = (time.time() - start_time) * 1000
+                    timing["total"] = (time.perf_counter() - start_time) * 1000
                     _log_timing("chat", timing)
                     return RAGResponse(
                         answer=cached["answer"],
@@ -422,10 +462,21 @@ class Pipeline:
 
         # Hybrid search
         with _phase(timing, "hybrid_search"):
-            results = self.retriever.retrieve(kb_name, query, query_embedding=query_emb)
+            try:
+                results = self.retriever.retrieve(kb_name, query, query_embedding=query_emb)
+            except Exception as e:
+                logger.warning("Hybrid search failed: %s", e, exc_info=True)
+                timing["total"] = (time.perf_counter() - start_time) * 1000
+                _log_timing("chat", timing)
+                return RAGResponse(
+                    answer="检索知识库时出现错误，请稍后重试。",
+                    sources=[],
+                    hallucination_risk="low",
+                    latency_ms=timing["total"],
+                )
 
         if not results:
-            timing["total"] = (time.time() - start_time) * 1000
+            timing["total"] = (time.perf_counter() - start_time) * 1000
             _log_timing("chat", timing)
             return RAGResponse(
                 answer="抱歉，在当前知识库中没有找到相关信息。请尝试更换关键词或导入相关文档。",
@@ -436,7 +487,12 @@ class Pipeline:
 
         # Rerank
         with _phase(timing, "rerank"):
-            results = self.reranker.rerank(query, results, top_n=self.config.retrieval.rerank_top_n)
+            try:
+                results = self.reranker.rerank(query, results, top_n=self.config.retrieval.rerank_top_n)
+            except Exception as e:
+                logger.warning("Reranker failed, using raw retrieval scores: %s", e, exc_info=True)
+                # Fall back to raw scores by sorting descending
+                results = sorted(results, key=lambda x: x.get("score", 0), reverse=True)[:self.config.retrieval.rerank_top_n]
 
         # Build prompt
         with _phase(timing, "build_prompt"):
@@ -507,7 +563,7 @@ class Pipeline:
             if self.config.retrieval.semantic_cache.get("enabled", True):
                 self.semantic_cache.set(query_emb, answer, sources, kb_name=kb_name)
 
-        timing["total"] = (time.time() - start_time) * 1000
+        timing["total"] = (time.perf_counter() - start_time) * 1000
         _log_timing("chat", timing)
 
         return RAGResponse(
@@ -530,13 +586,30 @@ class Pipeline:
             Dicts with 'type': 'token'|'answer'|'sources'|'done'|'error'.
         """
         timing: dict[str, float] = {}
-        start_time = time.time()
+        start_time = time.perf_counter()
+
+        # Validate query length
+        if not query or not query.strip():
+            timing["total"] = (time.perf_counter() - start_time) * 1000
+            yield {"type": "answer", "content": "请输入有效的问题。"}
+            yield {"type": "sources", "sources": []}
+            yield {"type": "done", "hallucination_risk": "low", "latency_ms": timing["total"]}
+            return
+        if len(query) > 4096:
+            timing["total"] = (time.perf_counter() - start_time) * 1000
+            yield {
+                "type": "answer",
+                "content": f"问题过长（{len(query)}字符），请精简到4096字符以内。",
+            }
+            yield {"type": "sources", "sources": []}
+            yield {"type": "done", "hallucination_risk": "low", "latency_ms": timing["total"]}
+            return
 
         # Load BM25 index
         t0 = time.perf_counter()
         if not self.bm25.has_index(kb_name):
             timing["bm25_load"] = (time.perf_counter() - t0) * 1000
-            timing["total"] = (time.time() - start_time) * 1000
+            timing["total"] = (time.perf_counter() - start_time) * 1000
             _log_timing("chat_stream", timing)
             yield {
                 "type": "answer",
@@ -551,7 +624,7 @@ class Pipeline:
             return
         if not self.bm25.load(kb_name):
             timing["bm25_load"] = (time.perf_counter() - t0) * 1000
-            timing["total"] = (time.time() - start_time) * 1000
+            timing["total"] = (time.perf_counter() - start_time) * 1000
             _log_timing("chat_stream", timing)
             yield {
                 "type": "answer",
@@ -577,7 +650,7 @@ class Pipeline:
             cached = self.semantic_cache.get(query_emb, kb_name=kb_name)
             if cached:
                 timing["cache_check"] = (time.perf_counter() - t0) * 1000
-                timing["total"] = (time.time() - start_time) * 1000
+                timing["total"] = (time.perf_counter() - start_time) * 1000
                 _log_timing("chat_stream", timing)
                 yield {"type": "answer", "content": cached["answer"]}
                 yield {"type": "sources", "sources": cached["sources"]}
@@ -591,11 +664,27 @@ class Pipeline:
 
         # Hybrid search
         t0 = time.perf_counter()
-        results = self.retriever.retrieve(kb_name, query, query_embedding=query_emb)
+        try:
+            results = self.retriever.retrieve(kb_name, query, query_embedding=query_emb)
+        except Exception as e:
+            logger.warning("Hybrid search failed in chat_stream: %s", e, exc_info=True)
+            timing["hybrid_search"] = (time.perf_counter() - t0) * 1000
+            timing["total"] = (time.perf_counter() - start_time) * 1000
+            _log_timing("chat_stream", timing)
+            yield {
+                "type": "error",
+                "content": "检索知识库时出现错误，请稍后重试。",
+            }
+            yield {
+                "type": "done",
+                "hallucination_risk": "low",
+                "latency_ms": timing["total"],
+            }
+            return
         timing["hybrid_search"] = (time.perf_counter() - t0) * 1000
 
         if not results:
-            timing["total"] = (time.time() - start_time) * 1000
+            timing["total"] = (time.perf_counter() - start_time) * 1000
             _log_timing("chat_stream", timing)
             yield {
                 "type": "answer",
@@ -611,7 +700,11 @@ class Pipeline:
 
         # Rerank
         t0 = time.perf_counter()
-        results = self.reranker.rerank(query, results, top_n=self.config.retrieval.rerank_top_n)
+        try:
+            results = self.reranker.rerank(query, results, top_n=self.config.retrieval.rerank_top_n)
+        except Exception as e:
+            logger.warning("Reranker failed in chat_stream, using raw scores: %s", e, exc_info=True)
+            results = sorted(results, key=lambda x: x.get("score", 0), reverse=True)[:self.config.retrieval.rerank_top_n]
         timing["rerank"] = (time.perf_counter() - t0) * 1000
 
         # Build prompt
@@ -685,7 +778,7 @@ class Pipeline:
             self.semantic_cache.set(query_emb, full_answer, sources, kb_name=kb_name)
         timing["cache_set"] = (time.perf_counter() - t0) * 1000
 
-        timing["total"] = (time.time() - start_time) * 1000
+        timing["total"] = (time.perf_counter() - start_time) * 1000
         _log_timing("chat_stream", timing)
 
         yield {"type": "sources", "sources": sources}
