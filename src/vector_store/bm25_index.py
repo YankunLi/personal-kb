@@ -58,7 +58,12 @@ class BM25Index:
         return self.index_dir / kb_name
 
     def has_index(self, kb_name: str) -> bool:
-        """Check if a BM25 index exists for a KB (validates kb_name first)."""
+        """Check if a BM25 index exists for a KB (validates kb_name first).
+
+        Returns True immediately if the KB is already loaded in memory.
+        """
+        if self._loaded_kb == kb_name:
+            return True
         return (self._kb_dir(kb_name) / "bm25.pkl").exists()
 
     def copy_index(self, source_kb: str, target_kb: str):
@@ -194,7 +199,15 @@ class BM25Index:
         self._loaded_kb = kb_name
 
     def load(self, kb_name: str) -> bool:
-        """Load the BM25 index from disk. Returns True if load succeeded."""
+        """Load the BM25 index from disk. Returns True if load succeeded.
+
+        If the requested KB is already loaded in memory, skips the disk read
+        to avoid redundant I/O on repeated queries to the same KB (e.g. during
+        a chat session).
+        """
+        if self._loaded_kb == kb_name:
+            return True
+
         kb_dir = self._kb_dir(kb_name)
         index_path = kb_dir / "bm25.pkl"
 

@@ -32,6 +32,7 @@ def _log_timing(operation: str, timing: dict[str, float]):
 from src.doc_processing.loader import load_documents
 from src.doc_processing.chunker import chunk_document, chunk_document_semantic
 from src.doc_processing.metadata import build_base_metadata, enrich_chunks
+from src.doc_processing.cleaner import normalize_text
 from src.doc_processing.deduplicator import ChunkDeduplicator
 from src.embedding.embedder import Embedder
 from src.vector_store.chroma_store import ChromaStore
@@ -172,7 +173,6 @@ class Pipeline:
         total_files = 0
         total_chunks = 0
         total_duplicates = 0
-        files_with_new_chunks = 0
         batch_chunks: list[dict[str, Any]] = []
         import_timing: dict[str, float] = {"embed": 0.0, "index": 0.0}
         bm25_loaded = False
@@ -285,9 +285,6 @@ class Pipeline:
                     chunks, dups = self.deduplicator.deduplicate(chunks)
                     total_duplicates += dups
 
-                if len(chunks) > 0:
-                    files_with_new_chunks += 1
-
                 total_chunks += len(chunks)
                 batch_chunks.extend(chunks)
 
@@ -322,17 +319,20 @@ class Pipeline:
                     "failed": total_failed,
                 }
 
-            # Update KB stats
+            # Update KB stats — query the true counts from ChromaDB so that
+            # repeated imports of the same file don't inflate file_count.
             existing = self.kb_manager.get(kb_name)
             try:
                 new_chunk_count = self.chroma.count(kb_name)
+                new_file_count = self.chroma.get_unique_file_count(kb_name)
             except Exception:
-                logger.warning("Failed to query chunk count for '%s'; stats may be stale.", kb_name, exc_info=True)
+                logger.warning("Failed to query chunk stats for '%s'; stats may be stale.", kb_name, exc_info=True)
                 new_chunk_count = existing.chunk_count
+                new_file_count = existing.file_count
             self.kb_manager.update_stats(
                 kb_name,
                 chunk_count=new_chunk_count,
-                file_count=existing.file_count + files_with_new_chunks,
+                file_count=new_file_count,
             )
 
             import_timing["total"] = (time.time() - start_time) * 1000
@@ -373,6 +373,11 @@ class Pipeline:
             return []
         if len(query) > 4096:
             raise ValueError(f"查询过长（{len(query)}字符），请精简到4096字符以内。")
+
+        # Normalize query to match document preprocessing (NFC, zero-width
+        # removal, whitespace normalization).  This ensures consistent
+        # tokenization and embedding between queries and stored documents.
+        query = normalize_text(query)
 
         # Load BM25 index for this KB
         if not self.bm25.has_index(kb_name):
@@ -426,6 +431,11 @@ class Pipeline:
                 hallucination_risk="low",
                 latency_ms=0.0,
             )
+
+        # Normalize query to match document preprocessing (NFC, zero-width
+        # removal, whitespace normalization).
+        query = normalize_text(query)
+
         timing: dict[str, float] = {}
         start_time = time.perf_counter()
 
@@ -563,8 +573,8 @@ class Pipeline:
         try:
             cited_ok, citation_issues = verify_citations(answer, sources)
             if not cited_ok:
-                logger.warning(
-                    "Citation check failed for answer: %s", citation_issues
+                logger.debug(
+                    "Citation check: %s", citation_issues
                 )
         except Exception:
             logger.debug("Citation verification skipped due to error", exc_info=True)
@@ -615,6 +625,10 @@ class Pipeline:
             yield {"type": "sources", "sources": []}
             yield {"type": "done", "hallucination_risk": "low", "latency_ms": timing["total"]}
             return
+
+        # Normalize query to match document preprocessing (NFC, zero-width
+        # removal, whitespace normalization).
+        query = normalize_text(query)
 
         # Load BM25 index
         t0 = time.perf_counter()
@@ -780,8 +794,8 @@ class Pipeline:
         try:
             cited_ok, citation_issues = verify_citations(full_answer, sources)
             if not cited_ok:
-                logger.warning(
-                    "Citation check failed for answer: %s", citation_issues
+                logger.debug(
+                    "Citation check: %s", citation_issues
                 )
         except Exception:
             logger.debug("Citation verification skipped due to error", exc_info=True)

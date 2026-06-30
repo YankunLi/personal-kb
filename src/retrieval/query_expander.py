@@ -35,7 +35,7 @@ def _get_keywords(text: str) -> list[str]:
     return keywords
 
 
-def expand_query(query: str, min_length: int = 5) -> str:
+def expand_query(query: str, min_length: int = 4) -> str:
     """Expand a short query with extracted keywords for BM25.
 
     For queries shorter than `min_length` characters, extracts keywords

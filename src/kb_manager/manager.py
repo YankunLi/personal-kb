@@ -122,17 +122,19 @@ class KBManager:
         if name not in self._registry:
             raise ValueError(f"Knowledge base '{name}' does not exist")
 
-        # Persist a registry state without this KB BEFORE deleting data, so a
-        # write failure aborts the delete cleanly (data stays intact). If the
-        # subsequent data deletion fails, the registry is already correct and
-        # only orphaned data files remain (recoverable).
+        # Phase 1: Delete vector + keyword data BEFORE updating the registry.
+        # If this fails, the registry is untouched and the KB still exists —
+        # the user can retry the delete.
+        self.chroma.delete_collection(name)
+        self.bm25.delete(name)
+
+        # Phase 2: Persist the updated registry atomically. At this point the
+        # data is already gone, so even if this write fails we only have an
+        # orphaned registry entry (recoverable) instead of orphaned data that
+        # could silently contaminate a re-created KB.
         new_registry = {k: v for k, v in self._registry.items() if k != name}
         self._save_registry(new_registry)
         self._registry = new_registry
-
-        # Delete vector + keyword data
-        self.chroma.delete_collection(name)
-        self.bm25.delete(name)
 
     def list(self) -> list[KBInfo]:
         """List all knowledge bases with stats."""

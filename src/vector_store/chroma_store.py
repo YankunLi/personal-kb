@@ -255,6 +255,33 @@ class ChromaStore:
         except Exception:
             return 0
 
+    def get_unique_file_count(self, kb_name: str) -> int:
+        """Count unique source files in a knowledge base.
+
+        Scans all chunk metadata to find distinct ``source_file`` values.
+        """
+        collection = self.get_or_create_collection(kb_name)
+        total = collection.count()
+        if total == 0:
+            return 0
+
+        source_files: set[str] = set()
+        offset = 0
+        while offset < total:
+            results = collection.get(
+                offset=offset,
+                limit=1000,
+                include=["metadatas"],
+            )
+            if results["metadatas"]:
+                for meta in results["metadatas"]:
+                    sf = meta.get("source_file", "")
+                    if sf:
+                        source_files.add(sf)
+            offset += 1000
+
+        return len(source_files)
+
     def delete_by_ids(self, kb_name: str, chunk_ids: list[str]):
         """Delete chunks by their IDs."""
         if not chunk_ids:

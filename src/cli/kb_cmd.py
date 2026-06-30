@@ -27,17 +27,23 @@ def _atomic_write_yaml(config_path: Path, config_data: dict) -> None:
 
 def _maybe_update_default_kb_config(old_name: str, new_name: str):
     """If ``old_name`` is the default KB, update config.yaml to point to ``new_name``."""
-    config = load_config()
-    if config.defaults.kb == old_name:
-        from ruamel.yaml import YAML
-        config_path = get_project_root() / "config.yaml"
-        yaml = YAML()
-        yaml.preserve_quotes = True
-        with open(config_path, "r") as f:
-            config_data = yaml.load(f)
-        if config_data and "defaults" in config_data:
-            config_data["defaults"]["kb"] = new_name
-            _atomic_write_yaml(config_path, config_data)
+    import logging
+    try:
+        config = load_config()
+        if config.defaults.kb == old_name:
+            from ruamel.yaml import YAML
+            config_path = get_project_root() / "config.yaml"
+            yaml = YAML()
+            yaml.preserve_quotes = True
+            with open(config_path, "r") as f:
+                config_data = yaml.load(f)
+            if config_data and "defaults" in config_data:
+                config_data["defaults"]["kb"] = new_name
+                _atomic_write_yaml(config_path, config_data)
+    except Exception:
+        logging.getLogger(__name__).debug(
+            "Failed to update config default KB from '%s' to '%s'", old_name, new_name, exc_info=True,
+        )
 
 
 @click.group("kb")
@@ -144,13 +150,15 @@ def kb_use(name: str):
 
 
 @kb_cmd.command("info")
-@click.argument("name", default="default")
-def kb_info(name: str):
+@click.argument("name", default=None)
+def kb_info(name: str | None = None):
     """查看知识库详细信息。
 
-    NAME: 知识库名称（默认: default）。
+    NAME: 知识库名称（默认: 当前默认知识库）。
     """
     pipeline = get_pipeline()
+    if name is None:
+        name = pipeline.config.defaults.kb
     try:
         info = pipeline.kb_manager.get(name)
         click.echo(f"名称: {info.name}")
@@ -193,6 +201,10 @@ def kb_rename(old_name: str, new_name: str):
 def provider_cmd():
     """LLM 提供商管理。"""
     pass
+
+
+# Register provider as a subcommand of kb so both "kb provider" and "provider" work.
+kb_cmd.add_command(provider_cmd)
 
 
 @provider_cmd.command("list")
