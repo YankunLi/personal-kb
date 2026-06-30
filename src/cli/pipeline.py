@@ -761,7 +761,10 @@ class Pipeline:
                         verification.get("issues", []),
                     )
             except Exception:
-                pass
+                logger.warning(
+                    "LLM verification failed for high-risk answer (chat_stream)",
+                    exc_info=True,
+                )
             finally:
                 if verify_llm is not None:
                     await verify_llm.close()
