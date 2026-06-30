@@ -101,7 +101,7 @@ def kb_delete(name: str, force: bool):
 
     pipeline = get_pipeline()
     try:
-        pipeline.kb_manager.delete(name, force=True)
+        pipeline.kb_manager.delete(name)
         # Invalidate any orphaned semantic-cache entries for this KB so they
         # can't leak memory or be served if the name is later reused.
         pipeline.semantic_cache.clear(name)

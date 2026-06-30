@@ -67,7 +67,13 @@ def parse_pdf(file_path: Path) -> str:
     """Parse PDF file, extracting text page by page."""
     from pypdf import PdfReader
 
-    reader = PdfReader(str(file_path))
+    try:
+        reader = PdfReader(str(file_path))
+    except ValueError as e:
+        msg = str(e).lower()
+        if "decrypt" in msg or "encrypt" in msg:
+            raise ValueError(f"加密的 PDF 文件无法解析: {file_path.name}，请先解密。") from e
+        raise ValueError(f"无法解析 PDF 文件: {file_path.name} ({e})") from e
     pages = []
     for i, page in enumerate(reader.pages):
         text = page.extract_text()

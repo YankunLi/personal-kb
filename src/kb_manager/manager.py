@@ -75,12 +75,25 @@ class KBManager:
             KBInfo for the created KB.
 
         Raises:
-            ValueError: If KB with this name already exists.
+            ValueError: If KB with this name already exists, or name
+                contains invalid characters.
         """
         if name in self._registry:
             raise ValueError(f"Knowledge base '{name}' already exists")
         if not name or not name.strip():
             raise ValueError("Knowledge base name cannot be empty or whitespace")
+
+        # Validate name against BM25's allowed character set so a KB that
+        # ChromaDB accepts doesn't become unusable for keyword search.
+        import re
+        if not re.match(r"^[a-zA-Z0-9\u4e00-\u9fff][a-zA-Z0-9\u4e00-\u9fff_.-]*$", name):
+            raise ValueError(
+                f"Invalid KB name: {name!r}. "
+                "Must start with alphanumeric or Chinese char, "
+                "contain only alphanumeric, Chinese, underscores, dots, or hyphens."
+            )
+        if ".." in name:
+            raise ValueError(f"Path traversal detected in KB name: {name!r}")
 
         info = KBInfo(name=name, topic=topic)
 
@@ -95,12 +108,11 @@ class KBManager:
         self._registry = new_registry
         return info
 
-    def delete(self, name: str, force: bool = False):
+    def delete(self, name: str):
         """Delete a knowledge base and all its data.
 
         Args:
             name: KB name to delete.
-            force: If True, skip confirmation.
 
         Raises:
             ValueError: If KB doesn't exist or is 'default'.

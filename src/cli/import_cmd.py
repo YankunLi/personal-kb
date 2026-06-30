@@ -33,6 +33,8 @@ def import_cmd(path: str, kb_name: str, recursive: bool, dry_run: bool):
             msg = "  🧠 正在生成向量嵌入..."
         elif step == "index":
             msg = "  📊 正在建立索引..."
+        elif step == "rollback":
+            msg = "  ⚠️  BM25 写入失败，正在回滚..."
         else:
             msg = f"  {step}: {file_path}"
         if msg != last_status[0]:

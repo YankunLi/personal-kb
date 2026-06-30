@@ -218,6 +218,8 @@ class Pipeline:
                 # Rollback: undo the just-added ChromaDB chunks. If this
                 # deletion fails, log it and continue with BM25 reload so
                 # we at least restore in-memory consistency.
+                if progress_callback:
+                    progress_callback("rollback", kb_name, 0)
                 try:
                     chunk_ids = [c["metadata"]["chunk_id"] for c in batch]
                     self.chroma.delete_by_ids(kb_name, chunk_ids)
@@ -370,13 +372,13 @@ class Pipeline:
         if not query or not query.strip():
             return []
         if len(query) > 4096:
-            return []
+            raise ValueError(f"查询过长（{len(query)}字符），请精简到4096字符以内。")
 
         # Load BM25 index for this KB
         if not self.bm25.has_index(kb_name):
-            return []
+            raise ValueError("知识库为空，请先导入文档。")
         if not self.bm25.load(kb_name):
-            return []
+            raise ValueError("抱歉，BM25 索引损坏，请尝试重新导入文档。")
 
         # Hybrid search: retrieve the full candidate pool (hybrid_top_k, e.g.
         # 50) so the reranker can improve recall, then cut down to top_k.

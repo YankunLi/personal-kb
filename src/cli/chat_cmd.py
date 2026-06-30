@@ -37,6 +37,8 @@ def chat_cmd(kb_name: str, provider_name: str, no_stream: bool):
 
     chat_history: list[dict[str, str]] = []
     last_sources: list = []
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
     while True:
         try:
@@ -108,7 +110,7 @@ def chat_cmd(kb_name: str, provider_name: str, no_stream: bool):
 
         # Normal query
         click.echo()  # blank line
-        asyncio.run(_do_chat(pipeline, query, kb_name, provider_name, chat_history, last_sources, no_stream))
+        loop.run_until_complete(_do_chat(pipeline, query, kb_name, provider_name, chat_history, last_sources, no_stream))
         click.echo()
 
 
