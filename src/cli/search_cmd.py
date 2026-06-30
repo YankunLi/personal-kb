@@ -7,7 +7,7 @@ from src.cli.pipeline import get_pipeline
 
 @click.command("search")
 @click.argument("query")
-@click.option("--kb", "kb_name", default="default", help="知识库名称")
+@click.option("--kb", "kb_name", default=None, help="知识库名称")
 @click.option("--top-k", default=5, show_default=True, help="返回结果数量")
 @click.option("--show-scores", is_flag=True, help="显示相关度分数")
 def search_cmd(query: str, kb_name: str, top_k: int, show_scores: bool):
@@ -16,6 +16,8 @@ def search_cmd(query: str, kb_name: str, top_k: int, show_scores: bool):
     QUERY: 搜索查询字符串。
     """
     pipeline = get_pipeline()
+    if kb_name is None:
+        kb_name = pipeline.config.defaults.kb
 
     click.echo(f"🔍 在知识库 '{kb_name}' 中搜索: {query}\n")
 

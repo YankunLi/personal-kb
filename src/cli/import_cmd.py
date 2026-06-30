@@ -7,7 +7,7 @@ from src.cli.pipeline import get_pipeline
 
 @click.command("import")
 @click.argument("path", type=click.Path(exists=True))
-@click.option("--kb", "kb_name", default="default", help="目标知识库名称")
+@click.option("--kb", "kb_name", default=None, help="目标知识库名称")
 @click.option("--recursive/--no-recursive", default=True, help="是否递归导入子目录")
 @click.option("--dry-run", is_flag=True, help="预览模式，不实际导入")
 def import_cmd(path: str, kb_name: str, recursive: bool, dry_run: bool):
@@ -16,6 +16,8 @@ def import_cmd(path: str, kb_name: str, recursive: bool, dry_run: bool):
     PATH: 文档文件或目录路径。
     """
     pipeline = get_pipeline()
+    if kb_name is None:
+        kb_name = pipeline.config.defaults.kb
 
     click.echo(f"📂 导入文档到知识库 '{kb_name}'...")
     if dry_run:

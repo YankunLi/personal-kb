@@ -12,12 +12,14 @@ logger = logging.getLogger(__name__)
 
 
 @click.command("chat")
-@click.option("--kb", "kb_name", default="default", help="知识库名称")
+@click.option("--kb", "kb_name", default=None, help="知识库名称")
 @click.option("--provider", "provider_name", default=None, help="LLM 提供商")
 @click.option("--no-stream", is_flag=True, help="禁用流式输出")
 def chat_cmd(kb_name: str, provider_name: str, no_stream: bool):
     """交互式对话模式，基于知识库问答。"""
     pipeline = get_pipeline()
+    if kb_name is None:
+        kb_name = pipeline.config.defaults.kb
 
     try:
         kb_info = pipeline.kb_manager.get(kb_name)
@@ -171,7 +173,7 @@ async def _do_chat(pipeline, query, kb_name, provider_name, chat_history, last_s
 
 @click.command("ask")
 @click.argument("query")
-@click.option("--kb", "kb_name", default="default", help="知识库名称")
+@click.option("--kb", "kb_name", default=None, help="知识库名称")
 @click.option("--provider", "provider_name", default=None, help="LLM 提供商")
 @click.option("--no-stream", is_flag=True, help="禁用流式输出")
 def ask_cmd(query: str, kb_name: str, provider_name: str, no_stream: bool):
@@ -180,6 +182,8 @@ def ask_cmd(query: str, kb_name: str, provider_name: str, no_stream: bool):
     QUERY: 问题字符串。
     """
     pipeline = get_pipeline()
+    if kb_name is None:
+        kb_name = pipeline.config.defaults.kb
 
     click.echo(f"🔍 在知识库 '{kb_name}' 中查询...\n")
     asyncio.run(_do_chat(pipeline, query, kb_name, provider_name, [], [], no_stream))
