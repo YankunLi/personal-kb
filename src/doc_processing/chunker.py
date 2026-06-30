@@ -195,7 +195,10 @@ def _merge_short_chunks(chunks: list[str], min_chars: int, max_chars: int) -> li
 
     for chunk in chunks:
         combined = (buffer + "\n\n" + chunk).strip() if buffer else chunk
-        if len(combined) <= max_chars:
+        # If this chunk is below min_chars, always merge it with the buffer
+        # even if it pushes the buffer over max_chars.  This prevents tiny
+        # fragments (e.g. stray 10-char sentence fragments) from surviving.
+        if len(combined) <= max_chars or (buffer and len(chunk) < min_chars):
             buffer = combined
         else:
             if buffer:

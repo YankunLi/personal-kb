@@ -130,6 +130,26 @@ def build_verification_prompt(answer: str, contexts: list[dict[str, Any]]) -> st
 {{"is_accurate": true/false, "issues": ["问题描述"], "supported_ratio": 0.0-1.0}}"""
 
 
+def _extract_json(text: str) -> str | None:
+    """Find the first top-level JSON object using balanced brace matching.
+
+    Unlike non-greedy ``\{.*?\}``, this correctly handles nested braces
+    inside arrays and objects within the response.
+    """
+    depth = 0
+    start = -1
+    for i, ch in enumerate(text):
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and start >= 0:
+                return text[start:i + 1]
+    return None
+
+
 async def verify_factual_accuracy(
     answer: str,
     contexts: list[dict[str, Any]],
@@ -156,10 +176,11 @@ async def verify_factual_accuracy(
 
     try:
         response = await llm_adapter.chat(messages, temperature=0.0, max_tokens=512)
-        # Extract JSON object, handling nested braces
-        json_match = re.search(r"\{.*?\}", response, re.DOTALL)
-        if json_match:
-            result = json.loads(json_match.group())
+        # Extract top-level JSON object with balanced brace matching,
+        # handling nested arrays/objects that non-greedy \{.*?\} can't.
+        json_str = _extract_json(response)
+        if json_str:
+            result = json.loads(json_str)
             return {
                 "is_accurate": result.get("is_accurate", True),
                 "issues": result.get("issues", []),

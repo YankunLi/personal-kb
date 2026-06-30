@@ -156,6 +156,21 @@ class ChromaStore:
         metadatas = [_sanitize_metadata(c["metadata"]) for c in chunks]
         embeddings_list = [e.tolist() for e in embeddings]
 
+        # Ensure unique IDs: when deduplication is disabled, multiple chunks
+        # can have the same content_hash-derived ID. ChromaDB rejects
+        # duplicate IDs, so append a counter suffix as a safety net.
+        if len(ids) != len(set(ids)):
+            seen: dict[str, int] = {}
+            deduped_ids: list[str] = []
+            for id_ in ids:
+                if id_ in seen:
+                    seen[id_] += 1
+                    deduped_ids.append(f"{id_}_{seen[id_]}")
+                else:
+                    seen[id_] = 0
+                    deduped_ids.append(id_)
+            ids = deduped_ids
+
         collection.add(
             ids=ids,
             documents=documents,

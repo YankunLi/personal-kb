@@ -203,6 +203,13 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
             "Set a specific revision hash in config.yaml to pin the version."
         )
 
+    if config.retrieval.reranker_model_revision == "main":
+        logger.warning(
+            "Reranker model_revision is 'main' (floating). "
+            "This can cause reranking drift when the model is updated upstream. "
+            "Set a specific revision hash in config.yaml to pin the version."
+        )
+
     return config
 
 
