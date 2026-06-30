@@ -74,15 +74,14 @@ class Reranker:
         """
         # Work on a shallow copy to avoid mutating caller's documents
         docs = [{**d} for d in documents]
+        if not docs:
+            return []
 
         # Ensure all documents have a baseline rerank_score
         for doc in docs:
             if "rerank_score" not in doc or doc.get("rerank_score") is None:
                 score = doc.get("score")
                 doc["rerank_score"] = float(score) if score is not None else 0.0
-
-        if len(docs) <= top_n:
-            return sorted(docs, key=lambda x: x.get("rerank_score", 0), reverse=True)
 
         model = self.model
         if model is None:

@@ -97,8 +97,11 @@ def chat_cmd(kb_name: str, provider_name: str, no_stream: bool):
                     click.echo(f"提供商 '{new_prov}' 不可用")
                 continue
             elif cmd == "/stats":
-                kb_info = pipeline.kb_manager.get(kb_name)
-                click.echo(f"知识库: {kb_name} | Chunks: {kb_info.chunk_count} | 历史: {len(chat_history)} 条")
+                try:
+                    kb_info = pipeline.kb_manager.get(kb_name)
+                    click.echo(f"知识库: {kb_name} | Chunks: {kb_info.chunk_count} | 历史: {len(chat_history)} 条")
+                except ValueError:
+                    click.echo(f"⚠️  知识库 '{kb_name}' 已不存在，请用 /kb <name> 切换")
                 continue
 
         # Normal query

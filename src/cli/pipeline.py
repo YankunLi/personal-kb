@@ -51,6 +51,7 @@ from src.source_tracking.tracker import (
     RAGResponse,
     extract_sources_from_contexts,
     format_sources_output,
+    verify_citations,
 )
 
 
@@ -346,8 +347,11 @@ class Pipeline:
         if not self.bm25.load(kb_name):
             return []
 
-        # Hybrid search
-        results = self.retriever.retrieve(kb_name, query, top_k=top_k)
+        # Hybrid search: retrieve the full candidate pool (hybrid_top_k, e.g.
+        # 50) so the reranker can improve recall, then cut down to top_k.
+        # Passing top_k here would cap candidates before reranking, defeating
+        # the purpose of the reranker (only reorders, never promotes).
+        results = self.retriever.retrieve(kb_name, query)
 
         # Rerank
         results = self.reranker.rerank(query, results, top_n=top_k)
@@ -486,6 +490,17 @@ class Pipeline:
 
         # Extract sources
         sources = extract_sources_from_contexts(results)
+
+        # Citation verification: warn if the LLM omitted or mis-cited sources.
+        # Soft signal only — does not alter the answer, just logs.
+        try:
+            cited_ok, citation_issues = verify_citations(answer, sources)
+            if not cited_ok:
+                logger.warning(
+                    "Citation check failed for answer: %s", citation_issues
+                )
+        except Exception:
+            logger.debug("Citation verification skipped due to error", exc_info=True)
 
         # Update semantic cache
         with _phase(timing, "cache_set"):
@@ -652,6 +667,17 @@ class Pipeline:
 
         # Extract sources
         sources = extract_sources_from_contexts(results)
+
+        # Citation verification: warn if the LLM omitted or mis-cited sources.
+        # Soft signal only — does not alter the answer, just logs.
+        try:
+            cited_ok, citation_issues = verify_citations(full_answer, sources)
+            if not cited_ok:
+                logger.warning(
+                    "Citation check failed for answer: %s", citation_issues
+                )
+        except Exception:
+            logger.debug("Citation verification skipped due to error", exc_info=True)
 
         # Update semantic cache
         t0 = time.perf_counter()

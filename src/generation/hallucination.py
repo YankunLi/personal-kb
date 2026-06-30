@@ -162,8 +162,14 @@ async def verify_factual_accuracy(
                 "issues": result.get("issues", []),
                 "supported_ratio": result.get("supported_ratio", 1.0),
             }
-    except (json.JSONDecodeError, Exception):
-        pass
+    except (json.JSONDecodeError, ValueError, TypeError) as e:
+        # Malformed LLM response — fall through to "unable to confirm" below.
+        # Network/transport errors are intentionally allowed to propagate to
+        # the caller (pipeline.py), which has its own guard.
+        import logging
+        logging.getLogger(__name__).debug(
+            "Verification response not parseable: %s", e
+        )
 
     # Verification failed: err on the side of caution
     return {

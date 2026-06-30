@@ -47,8 +47,16 @@ class KBManager:
                 )
         return {}
 
-    def _save_registry(self):
-        data = {k: v.to_dict() for k, v in self._registry.items()}
+    def _save_registry(self, registry: dict[str, KBInfo] | None = None):
+        """Persist the registry atomically (tmp + fsync + rename).
+
+        If ``registry`` is given, persist that state without first mutating
+        ``self._registry`` — callers can use this to make a rename atomic:
+        persist the new state, and only swap in-memory after the disk write
+        succeeds.
+        """
+        reg = registry if registry is not None else self._registry
+        data = {k: v.to_dict() for k, v in reg.items()}
         tmp_path = self.registry_path.with_suffix(".tmp")
         with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -76,11 +84,15 @@ class KBManager:
 
         info = KBInfo(name=name, topic=topic)
 
-        # Ensure ChromaDB collection exists before persisting registry entry
+        # Ensure ChromaDB collection exists (idempotent; an orphaned empty
+        # collection from a failed create is harmless and reused on retry).
         self.chroma.get_or_create_collection(name)
 
-        self._registry[name] = info
-        self._save_registry()
+        # Persist the new registry state to disk BEFORE mutating in-memory
+        # state, so a write failure leaves no trace in self._registry.
+        new_registry = {**self._registry, name: info}
+        self._save_registry(new_registry)
+        self._registry = new_registry
         return info
 
     def delete(self, name: str, force: bool = False):
@@ -98,13 +110,17 @@ class KBManager:
         if name not in self._registry:
             raise ValueError(f"Knowledge base '{name}' does not exist")
 
-        # Delete vector data
+        # Persist a registry state without this KB BEFORE deleting data, so a
+        # write failure aborts the delete cleanly (data stays intact). If the
+        # subsequent data deletion fails, the registry is already correct and
+        # only orphaned data files remain (recoverable).
+        new_registry = {k: v for k, v in self._registry.items() if k != name}
+        self._save_registry(new_registry)
+        self._registry = new_registry
+
+        # Delete vector + keyword data
         self.chroma.delete_collection(name)
         self.bm25.delete(name)
-
-        # Remove from registry
-        del self._registry[name]
-        self._save_registry()
 
     def list(self) -> list[KBInfo]:
         """List all knowledge bases with stats."""
@@ -176,12 +192,20 @@ class KBManager:
                 self.bm25.delete(new_name)
             raise RuntimeError(f"Failed to rename '{old_name}' to '{new_name}'") from e
 
-        # Phase 2: Delete old data (only after copies are confirmed)
+        # Phase 2: Persist the new registry state to disk BEFORE mutating
+        # in-memory state or deleting old data. If the write fails (or the
+        # process crashes), old_name's data and registry entry stay intact
+        # and the rename is simply aborted — no broken state.
+        old_info = self._registry[old_name]
+        new_info = old_info.model_copy(update={"name": new_name})
+        new_registry = {k: v for k, v in self._registry.items() if k != old_name}
+        new_registry[new_name] = new_info
+        self._save_registry(new_registry)
+
+        # Phase 3: Disk is safely updated — now swap the in-memory state.
+        self._registry = new_registry
+
+        # Phase 4: Delete old data. A failure here leaves orphaned old data
+        # on disk (recoverable), but the registry correctly points to new_name.
         self.chroma.delete_collection(old_name)
         self.bm25.delete(old_name)
-
-        # Phase 3: Update registry
-        info = self._registry.pop(old_name)
-        info.name = new_name
-        self._registry[new_name] = info
-        self._save_registry()

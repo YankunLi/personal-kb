@@ -133,17 +133,25 @@ class BM25Index:
         tokenized_query = self._tokenize(query)
         scores = self._bm25.get_scores(tokenized_query)
 
-        # Get top-k indices
-        top_indices = np.argsort(scores)[::-1][:top_k]
+        # Get top-k indices in descending score order
+        top_indices = np.argsort(scores)[::-1]
 
         results = []
         for idx in top_indices:
+            # Skip non-matching documents. BM25 scores can be 0 (no term
+            # overlap) or slightly negative (IDF<0 when a term appears in
+            # >50% of docs); such docs are not real matches and pollute
+            # retrieval if returned.
+            if scores[idx] <= 0:
+                break  # scores are sorted descending; rest are <= 0
             results.append({
                 "id": self._chunk_ids[idx],
                 "content": self._corpus[idx],
                 "metadata": self._metadatas[idx],
                 "score": float(scores[idx]),
             })
+            if len(results) >= top_k:
+                break
 
         return results
 

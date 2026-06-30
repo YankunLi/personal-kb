@@ -113,13 +113,16 @@ class LLMAdapter:
                 )
                 response.raise_for_status()
                 return response
-            except httpx.RequestError as e:
-                # Don't retry on permanent client errors (4xx except 429 rate limit)
+            except (httpx.RequestError, httpx.HTTPStatusError) as e:
+                # HTTPStatusError is NOT a subclass of RequestError in httpx,
+                # so both must be caught explicitly.
                 if isinstance(e, httpx.HTTPStatusError):
-                    if e.response.status_code < 500 and e.response.status_code != 429:
-                        await e.response.aclose()
+                    status = e.response.status_code
+                    # Always close the response body before retrying/raising
+                    await e.response.aclose()
+                    # Don't retry on permanent client errors (4xx except 429)
+                    if status < 500 and status != 429:
                         raise
-                    await e.response.aclose()  # Close response before retry
                 if attempt < self.max_retries - 1:
                     wait = self.backoff_seconds * (2 ** attempt)
                     await asyncio.sleep(wait)
@@ -144,8 +147,11 @@ class LLMAdapter:
 
         try:
             async for line in response.aiter_lines():
-                if line.startswith("data: "):
-                    data = line[6:]
+                # SSE spec: "data:" followed by an optional space. Accept both
+                # "data: {...}" and "data:{...}" so we don't drop tokens from
+                # providers that omit the space.
+                if line.startswith("data:"):
+                    data = line[5:].lstrip()
                     if data == "[DONE]":
                         break
                     try:

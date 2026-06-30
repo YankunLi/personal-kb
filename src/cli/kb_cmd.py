@@ -16,13 +16,12 @@ def _atomic_write_yaml(config_path: Path, config_data: dict) -> None:
     yaml = YAML()
     yaml.preserve_quotes = True
     tmp_path = config_path.with_suffix(config_path.suffix + ".tmp")
-    # Use restrictive permissions: config may contain API keys
+    # Use restrictive permissions: config may contain API keys.
+    # open(fd) takes ownership of the fd (closefd=True by default), so the
+    # fd is closed when the `with` block exits — do not os.close() it again.
     fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    try:
-        with open(fd, "w") as f:
-            yaml.dump(config_data, f)
-    finally:
-        os.close(fd)
+    with open(fd, "w") as f:
+        yaml.dump(config_data, f)
     os.replace(tmp_path, config_path)
 
 
@@ -88,6 +87,9 @@ def kb_delete(name: str, force: bool):
     pipeline = get_pipeline()
     try:
         pipeline.kb_manager.delete(name, force=True)
+        # Invalidate any orphaned semantic-cache entries for this KB so they
+        # can't leak memory or be served if the name is later reused.
+        pipeline.semantic_cache.clear(name)
         click.echo(f"✅ 知识库 '{name}' 已删除")
     except ValueError as e:
         click.echo(f"❌ {e}")
@@ -157,6 +159,10 @@ def kb_rename(old_name: str, new_name: str):
     pipeline = get_pipeline()
     try:
         pipeline.kb_manager.rename(old_name, new_name)
+        # Drop orphaned cache entries for the old name and any stale entries
+        # left under the new name from a prior incarnation.
+        pipeline.semantic_cache.clear(old_name)
+        pipeline.semantic_cache.clear(new_name)
         click.echo(f"✅ 知识库 '{old_name}' 已重命名为 '{new_name}'")
     except ValueError as e:
         click.echo(f"❌ {e}")
