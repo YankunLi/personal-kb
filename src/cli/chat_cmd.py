@@ -40,78 +40,81 @@ def chat_cmd(kb_name: str, provider_name: str, no_stream: bool):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    while True:
-        try:
-            query = click.prompt("你", prompt_suffix=": ")
-        except (EOFError, KeyboardInterrupt):
-            click.echo("\n再见！")
-            break
-
-        query = query.strip()
-        if not query:
-            continue
-
-        # Handle special commands
-        if query.startswith("/"):
-            cmd = query.lower()
-            if cmd in ("/exit", "/quit"):
-                click.echo("再见！")
+    try:
+        while True:
+            try:
+                query = click.prompt("你", prompt_suffix=": ")
+            except (EOFError, KeyboardInterrupt):
+                click.echo("\n再见！")
                 break
-            elif cmd == "/help":
-                click.echo("""
-可用命令:
-  /exit, /quit    退出
-  /help           显示帮助
-  /sources        显示上次回答的来源
-  /clear          清除对话历史
-  /kb <name>      切换知识库
-  /provider <name> 切换 LLM 提供商
-  /stats          显示会话统计
-""")
+
+            query = query.strip()
+            if not query:
                 continue
-            elif cmd == "/sources":
-                if last_sources:
-                    click.echo(format_sources_output(last_sources))
-                else:
-                    click.echo("暂无来源（请先提问）")
-                continue
-            elif cmd == "/clear":
-                chat_history.clear()
-                last_sources.clear()
-                click.echo("对话历史和来源已清除")
-                continue
-            elif cmd.startswith("/kb "):
-                new_kb = query[4:].strip()  # use original query, not lowercased
-                if pipeline.kb_manager.exists(new_kb):
-                    kb_name = new_kb
+
+            # Handle special commands
+            if query.startswith("/"):
+                cmd = query.lower()
+                if cmd in ("/exit", "/quit"):
+                    click.echo("再见！")
+                    break
+                elif cmd == "/help":
+                    click.echo("""
+    可用命令:
+      /exit, /quit    退出
+      /help           显示帮助
+      /sources        显示上次回答的来源
+      /clear          清除对话历史
+      /kb <name>      切换知识库
+      /provider <name> 切换 LLM 提供商
+      /stats          显示会话统计
+    """)
+                    continue
+                elif cmd == "/sources":
+                    if last_sources:
+                        click.echo(format_sources_output(last_sources))
+                    else:
+                        click.echo("暂无来源（请先提问）")
+                    continue
+                elif cmd == "/clear":
                     chat_history.clear()
                     last_sources.clear()
-                    kb_info = pipeline.kb_manager.get(kb_name)
-                    click.echo(f"已切换到知识库: {kb_name} ({kb_info.chunk_count} chunks)")
-                else:
-                    click.echo(f"知识库 '{new_kb}' 不存在")
-                continue
-            elif cmd.startswith("/provider "):
-                new_prov = query[10:].strip().lower()  # provider keys are lowercase
-                if new_prov in pipeline.config.llm.providers:
-                    provider_name = new_prov
-                    prov_info = pipeline.config.llm.providers[new_prov]
-                    click.echo(f"已切换到: {prov_info.name} ({prov_info.model})")
-                else:
-                    click.echo(f"提供商 '{new_prov}' 不可用")
-                continue
-            elif cmd == "/stats":
-                try:
-                    kb_info = pipeline.kb_manager.get(kb_name)
-                    click.echo(f"知识库: {kb_name} | Chunks: {kb_info.chunk_count} | 历史: {len(chat_history)} 条")
-                except ValueError:
-                    click.echo(f"⚠️  知识库 '{kb_name}' 已不存在，请用 /kb <name> 切换")
-                continue
+                    click.echo("对话历史和来源已清除")
+                    continue
+                elif cmd.startswith("/kb "):
+                    new_kb = query[4:].strip()  # use original query, not lowercased
+                    if pipeline.kb_manager.exists(new_kb):
+                        kb_name = new_kb
+                        chat_history.clear()
+                        last_sources.clear()
+                        kb_info = pipeline.kb_manager.get(kb_name)
+                        click.echo(f"已切换到知识库: {kb_name} ({kb_info.chunk_count} chunks)")
+                    else:
+                        click.echo(f"知识库 '{new_kb}' 不存在")
+                    continue
+                elif cmd.startswith("/provider "):
+                    new_prov = query[10:].strip().lower()  # provider keys are lowercase
+                    if new_prov in pipeline.config.llm.providers:
+                        provider_name = new_prov
+                        prov_info = pipeline.config.llm.providers[new_prov]
+                        click.echo(f"已切换到: {prov_info.name} ({prov_info.model})")
+                    else:
+                        click.echo(f"提供商 '{new_prov}' 不可用")
+                    continue
+                elif cmd == "/stats":
+                    try:
+                        kb_info = pipeline.kb_manager.get(kb_name)
+                        click.echo(f"知识库: {kb_name} | Chunks: {kb_info.chunk_count} | 历史: {len(chat_history)} 条")
+                    except ValueError:
+                        click.echo(f"\u26a0\ufe0f  知识库 '{kb_name}' 已不存在，请用 /kb <name> 切换")
+                    continue
 
-        # Normal query
-        click.echo()  # blank line
-        loop.run_until_complete(_do_chat(pipeline, query, kb_name, provider_name, chat_history, last_sources, no_stream))
-        click.echo()
+            # Normal query
+            click.echo()  # blank line
+            loop.run_until_complete(_do_chat(pipeline, query, kb_name, provider_name, chat_history, last_sources, no_stream))
+            click.echo()
+    finally:
+        loop.close()
 
 
 async def _do_chat(pipeline, query, kb_name, provider_name, chat_history, last_sources, no_stream):
