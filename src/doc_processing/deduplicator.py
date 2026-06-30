@@ -32,7 +32,7 @@ class ChunkDeduplicator:
 
     def compute_hash(self, content: str) -> str:
         """Compute MD5 hash of chunk content."""
-        return hashlib.md5(content.encode("utf-8")).hexdigest()
+        return hashlib.md5(content.encode("utf-8"), usedforsecurity=False).hexdigest()
 
     def _get_hash(self, chunk: dict) -> str:
         """Get the content hash from chunk metadata, or compute it."""

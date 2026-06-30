@@ -88,7 +88,7 @@ def chunk_document(
         # Skip empty or whitespace-only chunks
         if not chunk_text.strip():
             continue
-        content_hash = hashlib.md5(chunk_text.encode("utf-8")).hexdigest()
+        content_hash = hashlib.md5(chunk_text.encode("utf-8"), usedforsecurity=False).hexdigest()
         chunk_meta = {
             **metadata,
             "chunk_index": i,
@@ -267,7 +267,7 @@ def chunk_document_semantic(
     for i, chunk_text in enumerate(all_chunks):
         if not chunk_text.strip():
             continue
-        content_hash = hashlib.md5(chunk_text.encode("utf-8")).hexdigest()
+        content_hash = hashlib.md5(chunk_text.encode("utf-8"), usedforsecurity=False).hexdigest()
         chunk_meta = {
             **metadata,
             "chunk_index": i,
