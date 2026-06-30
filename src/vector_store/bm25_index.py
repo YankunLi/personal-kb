@@ -94,6 +94,7 @@ class BM25Index:
             self._tokenized_corpus.append(self._tokenize(content))
 
         self._bm25 = BM25Okapi(self._tokenized_corpus) if self._tokenized_corpus else None
+        self._loaded_kb = None  # Built from scratch, not yet persisted
 
     def add_chunks(self, chunks: list[dict[str, Any]]):
         """Add new chunks to the existing BM25 index.

@@ -1,11 +1,14 @@
 """kb chat and kb ask commands: interactive chat and single-shot Q&A."""
 
 import asyncio
+import logging
 
 import click
 
 from src.cli.pipeline import get_pipeline
 from src.source_tracking.tracker import format_sources_output
+
+logger = logging.getLogger(__name__)
 
 
 @click.command("chat")
@@ -153,7 +156,8 @@ async def _do_chat(pipeline, query, kb_name, provider_name, chat_history, last_s
     except KeyboardInterrupt:
         click.echo("\n⏸️  已取消")
     except Exception as e:
-        click.echo(f"\n❌ 对话出错: {e}")
+        logger.warning("Chat error: %s", e, exc_info=True)
+        click.echo("\n❌ 对话出错，请稍后重试")
         # Don't add failed query to history
 
 

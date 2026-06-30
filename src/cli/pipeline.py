@@ -200,7 +200,7 @@ class Pipeline:
             t0 = time.perf_counter()
             self.chroma.add_chunks(kb_name, batch, embeddings)
 
-            # Update BM25 incrementally: load once, add per batch, save once at end
+            # Update BM25 incrementally: load once, add per batch, save checkpoint
             try:
                 if not bm25_loaded:
                     if not self.bm25.load(kb_name):
@@ -210,11 +210,15 @@ class Pipeline:
                     bm25_loaded = True
                 else:
                     self.bm25.add_chunks(batch)
+                # Save checkpoint after each successful batch so rollback
+                # can always reload from the last good state.
+                self.bm25.save(kb_name)
             except Exception:
                 chunk_ids = [c["metadata"]["chunk_id"] for c in batch]
                 self.chroma.delete_by_ids(kb_name, chunk_ids)
-                # Rollback BM25 in-memory state: reload from last good save
-                self.bm25.load(kb_name)
+                # Rollback BM25 in-memory state: reload from last good checkpoint
+                if not self.bm25.load(kb_name):
+                    self.bm25.reset()
                 raise
             finally:
                 import_timing["index"] += (time.perf_counter() - t0) * 1000
@@ -290,10 +294,6 @@ class Pipeline:
         if batch_chunks:
             _flush_batch(batch_chunks)
             batch_chunks.clear()
-
-        # Persist BM25 index once after all batches
-        if bm25_loaded:
-            self.bm25.save(kb_name)
 
         if total_chunks == 0:
             import_timing["total"] = (time.time() - start_time) * 1000
