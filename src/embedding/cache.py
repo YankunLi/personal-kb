@@ -73,7 +73,9 @@ class EmbeddingCache:
         tmp_path.replace(self._index_path)
 
     def _cache_key(self, text: str, model_name: str, model_revision: str) -> str:
-        raw = f"{text}|{model_name}|{model_revision}"
+        # Use \0 (null byte) as delimiter since it cannot appear in text,
+        # model names, or revisions, preventing delimiter-collision bugs.
+        raw = f"{text}\0{model_name}\0{model_revision}"
         return hashlib.md5(raw.encode("utf-8"), usedforsecurity=False).hexdigest()
 
     def _cache_path(self, key: str) -> Path:
@@ -148,10 +150,13 @@ class EmbeddingCache:
     def _evict(self):
         """Evict the least recently used entry."""
         oldest_key = min(self._index, key=lambda k: self._index[k]["last_access"])
+        # Remove from index FIRST so a crash between these ops leaves
+        # an orphaned .npy file (recoverable via _recover_orphans) rather
+        # than an index entry pointing at a missing file.
+        del self._index[oldest_key]
         cache_path = self._cache_path(oldest_key)
         if cache_path.exists():
             cache_path.unlink()
-        del self._index[oldest_key]
 
     def clear(self):
         """Clear all cached embeddings."""
