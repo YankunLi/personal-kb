@@ -141,11 +141,12 @@ def _interpolate_env_vars(value: Any) -> tuple[Any, list[str]]:
     return value, unresolved
 
 
-def load_config(config_path: str | Path = "config.yaml") -> AppConfig:
+def load_config(config_path: str | Path | None = None) -> AppConfig:
     """Load configuration from YAML file with env var interpolation.
 
     Args:
-        config_path: Path to config.yaml file.
+        config_path: Path to config.yaml file. Defaults to
+            <project_root>/config.yaml.
 
     Returns:
         Validated AppConfig instance.
@@ -154,6 +155,8 @@ def load_config(config_path: str | Path = "config.yaml") -> AppConfig:
         FileNotFoundError: If config file doesn't exist.
         ValueError: If config validation fails.
     """
+    if config_path is None:
+        config_path = get_project_root() / "config.yaml"
     config_path = Path(config_path)
 
     # Load .env first so env vars are available for interpolation

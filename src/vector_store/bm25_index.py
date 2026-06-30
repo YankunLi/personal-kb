@@ -214,7 +214,6 @@ class BM25Index:
         self._corpus = data["corpus"]
         self._chunk_ids = data["chunk_ids"]
         self._metadatas = data["metadatas"]
-        self._loaded_kb = kb_name
 
         # Restore cached tokenized corpus if available, otherwise tokenize
         if "tokenized_corpus" in data:
@@ -223,6 +222,8 @@ class BM25Index:
             self._tokenized_corpus = [self._tokenize(c) for c in self._corpus]
 
         self._bm25 = BM25Okapi(self._tokenized_corpus) if self._tokenized_corpus else None
+        # Set _loaded_kb AFTER BM25 rebuild so a crash leaves a clean state
+        self._loaded_kb = kb_name
 
         return True
 

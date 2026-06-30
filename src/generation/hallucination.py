@@ -12,7 +12,10 @@ from typing import Any
 
 def extract_numbers(text: str) -> set[str]:
     """Extract numbers (including percentages) from text."""
-    return set(re.findall(r"\b\d+\.?\d*%?\b", text))
+    # Use (?<!\d)/(?!\d) instead of \b because Python 3's \w includes CJK
+    # characters, so \b doesn't match between a Chinese char and a digit.
+    # E.g. "数量123个" — no \b before 123, but (?<!\d) works correctly.
+    return set(re.findall(r"(?<!\d)\d+\.?\d*%?(?!\d)", text))
 
 
 def extract_entities(text: str, min_length: int = 2) -> set[str]:
