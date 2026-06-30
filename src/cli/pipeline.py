@@ -341,8 +341,7 @@ class Pipeline:
             List of result dicts with content, metadata, scores.
         """
         # Load BM25 index for this KB
-        index_path = self.bm25.index_dir / kb_name / "bm25.pkl"
-        if not index_path.exists():
+        if not self.bm25.has_index(kb_name):
             return []
         if not self.bm25.load(kb_name):
             return []
@@ -380,8 +379,7 @@ class Pipeline:
 
         # Load BM25 index for this KB
         with _phase(timing, "bm25_load"):
-            index_path = self.bm25.index_dir / kb_name / "bm25.pkl"
-            if not index_path.exists():
+            if not self.bm25.has_index(kb_name):
                 timing["total"] = (time.time() - start_time) * 1000
                 _log_timing("chat", timing)
                 return RAGResponse(
@@ -514,15 +512,14 @@ class Pipeline:
         """Streaming RAG pipeline: yields tokens as they arrive.
 
         Yields:
-            Dicts with 'type': 'token'|'sources'|'done'|'error'.
+            Dicts with 'type': 'token'|'answer'|'sources'|'done'|'error'.
         """
         timing: dict[str, float] = {}
         start_time = time.time()
 
         # Load BM25 index
         t0 = time.perf_counter()
-        index_path = self.bm25.index_dir / kb_name / "bm25.pkl"
-        if not index_path.exists():
+        if not self.bm25.has_index(kb_name):
             timing["bm25_load"] = (time.perf_counter() - t0) * 1000
             timing["total"] = (time.time() - start_time) * 1000
             _log_timing("chat_stream", timing)

@@ -166,21 +166,14 @@ class KBManager:
             chroma_copied = True
 
             # Copy BM25 index
-            old_bm25 = self.bm25.index_dir / old_name / "bm25.pkl"
-            if old_bm25.exists():
-                new_bm25_dir = self.bm25.index_dir / new_name
-                new_bm25_dir.mkdir(parents=True, exist_ok=True)
-                import shutil
-                shutil.copy2(old_bm25, new_bm25_dir / "bm25.pkl")
+            self.bm25.copy_index(old_name, new_name)
             bm25_copied = True
         except Exception as e:
             # Rollback: clean up any partially copied data
             if chroma_copied:
                 self.chroma.delete_collection(new_name)
             if bm25_copied:
-                new_bm25_dir = self.bm25.index_dir / new_name
-                import shutil
-                shutil.rmtree(new_bm25_dir, ignore_errors=True)
+                self.bm25.delete(new_name)
             raise RuntimeError(f"Failed to rename '{old_name}' to '{new_name}'") from e
 
         # Phase 2: Delete old data (only after copies are confirmed)

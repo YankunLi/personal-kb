@@ -113,7 +113,7 @@ class LLMAdapter:
                 )
                 response.raise_for_status()
                 return response
-            except (httpx.HTTPError, httpx.TimeoutException) as e:
+            except httpx.RequestError as e:
                 # Don't retry on permanent client errors (4xx except 429 rate limit)
                 if isinstance(e, httpx.HTTPStatusError):
                     if e.response.status_code < 500 and e.response.status_code != 429:
@@ -125,7 +125,7 @@ class LLMAdapter:
                     await asyncio.sleep(wait)
                 else:
                     raise RuntimeError(
-                        f"LLM request failed after {self.max_retries} attempts: {e}"
+                        f"LLM request failed after {self.max_retries} attempts"
                     ) from e
 
     async def chat_stream(

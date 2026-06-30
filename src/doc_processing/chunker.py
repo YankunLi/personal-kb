@@ -122,7 +122,7 @@ def _split_by_headings(text: str) -> list[tuple[str, str | None]]:
 
     Returns a list of (section_text, heading_title_or_None) tuples.
     """
-    heading_re = re.compile(r"^(#{1,4})\s+(.+)$", re.MULTILINE)
+    heading_re = re.compile(r"^(#{1,6})\s+(.+)$", re.MULTILINE)
     matches = list(heading_re.finditer(text))
 
     if not matches:

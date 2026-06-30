@@ -57,6 +57,20 @@ class BM25Index:
         self._validate_kb_name(kb_name)
         return self.index_dir / kb_name
 
+    def has_index(self, kb_name: str) -> bool:
+        """Check if a BM25 index exists for a KB (validates kb_name first)."""
+        return (self._kb_dir(kb_name) / "bm25.pkl").exists()
+
+    def copy_index(self, source_kb: str, target_kb: str):
+        """Copy a BM25 index from one KB to another (validates both names)."""
+        src_dir = self._kb_dir(source_kb)
+        dst_dir = self._kb_dir(target_kb)
+        src_file = src_dir / "bm25.pkl"
+        if src_file.exists():
+            dst_dir.mkdir(parents=True, exist_ok=True)
+            import shutil
+            shutil.copy2(src_file, dst_dir / "bm25.pkl")
+
     def _tokenize(self, text: str) -> list[str]:
         """Tokenize Chinese text using jieba."""
         return list(jieba.cut(text))
