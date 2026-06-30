@@ -72,42 +72,44 @@ class Reranker:
         Returns:
             Top-n documents sorted by reranker score descending.
         """
+        # Work on a shallow copy to avoid mutating caller's documents
+        docs = [{**d} for d in documents]
+
         # Ensure all documents have a baseline rerank_score
-        for doc in documents:
+        for doc in docs:
             if "rerank_score" not in doc or doc.get("rerank_score") is None:
                 score = doc.get("score")
                 doc["rerank_score"] = float(score) if score is not None else 0.0
 
-        if len(documents) <= top_n:
-            return sorted(documents, key=lambda x: x.get("rerank_score", 0), reverse=True)
+        if len(docs) <= top_n:
+            return sorted(docs, key=lambda x: x.get("rerank_score", 0), reverse=True)
 
         model = self.model
         if model is None:
-            # Reranker unavailable, fall back to retrieval scores
-            return sorted(documents, key=lambda x: x.get("rerank_score", 0), reverse=True)[:top_n]
+            return sorted(docs, key=lambda x: x.get("rerank_score", 0), reverse=True)[:top_n]
 
         try:
-            pairs = [[query, doc["content"]] for doc in documents]
+            pairs = [[query, doc["content"]] for doc in docs]
             scores = model.compute_score(pairs, normalize=True)
         except Exception as e:
             logger.warning(
                 "Reranker inference failed: %s. Falling back to raw retrieval scores.", e
             )
-            return sorted(documents, key=lambda x: x.get("rerank_score", 0), reverse=True)[:top_n]
+            return sorted(docs, key=lambda x: x.get("rerank_score", 0), reverse=True)[:top_n]
 
         # compute_score returns a float for single pair, list for multiple
         if isinstance(scores, float):
             scores = [scores]
 
-        if len(scores) != len(documents):
+        if len(scores) != len(docs):
             raise RuntimeError(
-                f"Reranker returned {len(scores)} scores for {len(documents)} documents"
+                f"Reranker returned {len(scores)} scores for {len(docs)} documents"
             )
 
         # Attach reranker scores
-        for doc, score in zip(documents, scores):
+        for doc, score in zip(docs, scores):
             doc["rerank_score"] = float(score)
 
         # Sort by score descending
-        reranked = sorted(documents, key=lambda x: x.get("rerank_score", 0), reverse=True)
+        reranked = sorted(docs, key=lambda x: x.get("rerank_score", 0), reverse=True)
         return reranked[:top_n]

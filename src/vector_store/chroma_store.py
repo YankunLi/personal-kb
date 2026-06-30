@@ -273,7 +273,7 @@ def _sanitize_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
     sanitized = {}
     for key, value in metadata.items():
         if value is None:
-            sanitized[key] = ""
+            continue  # Skip None values instead of storing as empty string
         elif isinstance(value, (str, int, float, bool)):
             sanitized[key] = value
         else:

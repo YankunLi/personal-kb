@@ -55,8 +55,10 @@ class LLMAdapter:
             data = resp.json()
             token = data.get("access_token")
             if not token:
+                error_keys = {k for k in data if k not in ("access_token", "expires_in", "token_type")}
                 raise RuntimeError(
-                    f"OAuth token endpoint returned no access_token: {data}"
+                    f"OAuth token endpoint returned no access_token. "
+                    f"Response keys: {sorted(error_keys) if error_keys else 'none'}"
                 )
             self._oauth_token = token
             self._oauth_token_expiry = time.time() + data.get("expires_in", 86400)

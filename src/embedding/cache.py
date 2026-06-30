@@ -59,6 +59,8 @@ class EmbeddingCache:
     def _save_index(self):
         with open(self._index_path, "w") as f:
             json.dump(self._index, f)
+            f.flush()
+            os.fsync(f.fileno())
 
     def _cache_key(self, text: str, model_name: str, model_revision: str) -> str:
         raw = f"{text}|{model_name}|{model_revision}"

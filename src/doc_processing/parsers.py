@@ -10,6 +10,13 @@ def _read_with_fallback(file_path: Path) -> str:
         try:
             return file_path.read_text(encoding=encoding)
         except (UnicodeDecodeError, UnicodeError):
+            if encoding != "utf-8":
+                import logging
+                logging.getLogger(__name__).warning(
+                    "File %s decoded with fallback encoding %s (UTF-8 failed). "
+                    "Content may be garbled if the file is actually UTF-8 with corruption.",
+                    file_path, encoding,
+                )
             continue
     raise ValueError(f"Cannot decode file: {file_path}")
 

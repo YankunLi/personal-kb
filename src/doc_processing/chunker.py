@@ -292,8 +292,8 @@ def chunk_document_semantic(
 
 def _prepend_heading(chunk: str, heading: str) -> str:
     """Prepend heading context to a chunk if not already present."""
-    # Only skip if the heading text is already in the chunk
-    if heading in chunk:
+    # Only skip if the heading is already at the start of the chunk
+    if chunk.startswith(heading):
         return chunk
     return f"{heading}\n{chunk}"
 

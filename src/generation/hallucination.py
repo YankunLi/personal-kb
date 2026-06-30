@@ -153,8 +153,8 @@ async def verify_factual_accuracy(
 
     try:
         response = await llm_adapter.chat(messages, temperature=0.0, max_tokens=512)
-        # Try to extract JSON from the response
-        json_match = re.search(r"\{[^}]+\}", response, re.DOTALL)
+        # Extract JSON object, handling nested braces
+        json_match = re.search(r"\{.*\}", response, re.DOTALL)
         if json_match:
             result = json.loads(json_match.group())
             return {
@@ -165,8 +165,9 @@ async def verify_factual_accuracy(
     except (json.JSONDecodeError, Exception):
         pass
 
+    # Verification failed: err on the side of caution
     return {
-        "is_accurate": True,
-        "issues": [],
-        "supported_ratio": 1.0,
+        "is_accurate": False,
+        "issues": ["Verification call failed — unable to confirm accuracy"],
+        "supported_ratio": 0.0,
     }

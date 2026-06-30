@@ -4,13 +4,19 @@ Uses jieba for Chinese tokenization and rank_bm25 for scoring.
 The index is persisted to disk via pickle.
 """
 
+import os
 import pickle
+import re
 from pathlib import Path
 from typing import Any
 
 import jieba
 import numpy as np
 from rank_bm25 import BM25Okapi
+
+
+# Characters allowed in KB names for path traversal prevention
+_KB_NAME_RE = re.compile(r"^[a-zA-Z0-9\u4e00-\u9fff][a-zA-Z0-9\u4e00-\u9fff_.-]*$")
 
 
 class BM25Index:
@@ -29,6 +35,27 @@ class BM25Index:
         self._tokenized_corpus: list[list[str]] = []
         self._bm25: BM25Okapi | None = None
         self._loaded_kb: str | None = None
+
+    @staticmethod
+    def _validate_kb_name(kb_name: str) -> str:
+        """Validate kb_name to prevent path traversal.
+
+        Returns the name if valid, raises ValueError otherwise.
+        """
+        if not kb_name or not _KB_NAME_RE.match(kb_name):
+            raise ValueError(
+                f"Invalid KB name: {kb_name!r}. "
+                "Must start with alphanumeric or Chinese char, "
+                "contain only alphanumeric, Chinese, underscores, dots, or hyphens."
+            )
+        if ".." in kb_name:
+            raise ValueError(f"Path traversal detected in KB name: {kb_name!r}")
+        return kb_name
+
+    def _kb_dir(self, kb_name: str) -> Path:
+        """Get the directory for a KB, validating the name first."""
+        self._validate_kb_name(kb_name)
+        return self.index_dir / kb_name
 
     def _tokenize(self, text: str) -> list[str]:
         """Tokenize Chinese text using jieba."""
@@ -107,7 +134,7 @@ class BM25Index:
 
     def save(self, kb_name: str):
         """Persist the BM25 index to disk."""
-        kb_dir = self.index_dir / kb_name
+        kb_dir = self._kb_dir(kb_name)
         kb_dir.mkdir(parents=True, exist_ok=True)
 
         data = {
@@ -123,7 +150,7 @@ class BM25Index:
 
     def load(self, kb_name: str) -> bool:
         """Load the BM25 index from disk. Returns True if load succeeded."""
-        kb_dir = self.index_dir / kb_name
+        kb_dir = self._kb_dir(kb_name)
         index_path = kb_dir / "bm25.pkl"
 
         if not index_path.exists():
@@ -165,7 +192,7 @@ class BM25Index:
 
     def delete(self, kb_name: str):
         """Delete the BM25 index for a knowledge base."""
-        kb_dir = self.index_dir / kb_name
+        kb_dir = self._kb_dir(kb_name)
         index_path = kb_dir / "bm25.pkl"
         if index_path.exists():
             index_path.unlink()

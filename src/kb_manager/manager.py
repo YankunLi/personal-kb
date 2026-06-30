@@ -1,6 +1,7 @@
 """Multi-KB manager: create, list, delete, switch knowledge bases."""
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -51,6 +52,8 @@ class KBManager:
         tmp_path = self.registry_path.with_suffix(".tmp")
         with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
         tmp_path.replace(self.registry_path)
 
     def create(self, name: str, topic: str = "") -> KBInfo:

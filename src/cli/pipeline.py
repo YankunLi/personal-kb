@@ -1,6 +1,7 @@
 """Core pipeline orchestrating document import, retrieval, and generation."""
 
 import logging
+import threading
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -27,6 +28,7 @@ def _log_timing(operation: str, timing: dict[str, float]):
         return
     parts = ", ".join(f"{k}={v:.0f}ms" for k, v in timing.items())
     logger.debug("%s timing: %s", operation, parts)
+
 from src.doc_processing.loader import load_documents
 from src.doc_processing.chunker import chunk_document, chunk_document_semantic
 from src.doc_processing.metadata import build_base_metadata, enrich_chunks
@@ -54,13 +56,16 @@ from src.source_tracking.tracker import (
 
 # Global pipeline instance (lazy initialized)
 _pipeline: "Pipeline | None" = None
+_pipeline_lock = threading.Lock()
 
 
 def get_pipeline() -> "Pipeline":
     global _pipeline
     if _pipeline is None:
-        config = load_config()
-        _pipeline = Pipeline(config)
+        with _pipeline_lock:
+            if _pipeline is None:
+                config = load_config()
+                _pipeline = Pipeline(config)
     return _pipeline
 
 
@@ -459,17 +464,27 @@ class Pipeline:
             risk_level = get_hallucination_risk_level(overlap)
 
             # Optional LLM-based verification for high-risk answers
+            # (create a fresh adapter since the generation one was closed)
             if (
                 self.config.hallucination.llm_verification
                 and risk_level == "high"
-                and llm is not None
             ):
-                verification = await verify_factual_accuracy(answer, results, llm)
-                if not verification["is_accurate"]:
-                    logger.warning(
-                        "LLM verification flagged inaccuracies: %s",
-                        verification.get("issues", []),
+                verify_llm = None
+                try:
+                    verify_llm = self._get_llm_adapter(provider_name)
+                    verification = await verify_factual_accuracy(
+                        answer, results, verify_llm,
                     )
+                    if not verification["is_accurate"]:
+                        logger.warning(
+                            "LLM verification flagged inaccuracies: %s",
+                            verification.get("issues", []),
+                        )
+                except Exception:
+                    pass
+                finally:
+                    if verify_llm is not None:
+                        await verify_llm.close()
 
         # Extract sources
         sources = extract_sources_from_contexts(results)

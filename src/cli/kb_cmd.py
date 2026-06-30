@@ -16,8 +16,13 @@ def _atomic_write_yaml(config_path: Path, config_data: dict) -> None:
     yaml = YAML()
     yaml.preserve_quotes = True
     tmp_path = config_path.with_suffix(config_path.suffix + ".tmp")
-    with open(tmp_path, "w") as f:
-        yaml.dump(config_data, f)
+    # Use restrictive permissions: config may contain API keys
+    fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with open(fd, "w") as f:
+            yaml.dump(config_data, f)
+    finally:
+        os.close(fd)
     os.replace(tmp_path, config_path)
 
 
