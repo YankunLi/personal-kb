@@ -91,10 +91,14 @@ class SemanticCache:
         with self._lock:
             self._entries.append((query_embedding.copy(), answer, sources, kb_name, time.time()))
 
-            # LRU eviction: remove oldest entry by access time
+            # LRU eviction: remove oldest entry by access time.
+            # Using pop(index) instead of remove(element) avoids a crash
+            # from numpy array comparison: remove() compares tuples
+            # element-wise, and ndarray.__eq__ returns a boolean array
+            # which is ambiguous in a truth-value context.
             if len(self._entries) > self.max_size:
-                oldest = min(self._entries, key=lambda x: x[4])
-                self._entries.remove(oldest)
+                oldest_idx = min(range(len(self._entries)), key=lambda i: self._entries[i][4])
+                self._entries.pop(oldest_idx)
 
     def clear(self, kb_name: str | None = None):
         """Clear cached entries. If kb_name is given, only clear that KB's entries."""
