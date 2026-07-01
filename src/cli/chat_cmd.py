@@ -134,12 +134,14 @@ async def _do_chat(pipeline, query, kb_name, provider_name, chat_history, last_s
             if response.hallucination_risk != "low":
                 click.echo(f"⚠️  幻觉风险: {response.hallucination_risk}")
 
-            chat_history.append({"role": "user", "content": query})
-            chat_history.append({"role": "assistant", "content": response.answer})
+            if response.success:
+                chat_history.append({"role": "user", "content": query})
+                chat_history.append({"role": "assistant", "content": response.answer})
         else:
             click.echo("🤖 ", nl=False)
             full_answer = ""
             sources = None
+            success = True
 
             async for chunk in pipeline.chat_stream(
                 query, kb_name=kb_name, provider_name=provider_name,
@@ -156,14 +158,16 @@ async def _do_chat(pipeline, query, kb_name, provider_name, chat_history, last_s
                     last_sources.clear()
                     last_sources.extend(chunk["sources"])
                 elif chunk["type"] == "done":
+                    success = chunk.get("success", True)
                     click.echo()
                     if sources:
                         click.echo(format_sources_output(sources))
                     if chunk.get("hallucination_risk", "low") != "low":
                         click.echo(f"⚠️  幻觉风险: {chunk['hallucination_risk']}")
 
-            chat_history.append({"role": "user", "content": query})
-            chat_history.append({"role": "assistant", "content": full_answer})
+            if success:
+                chat_history.append({"role": "user", "content": query})
+                chat_history.append({"role": "assistant", "content": full_answer})
 
         # Cap chat history to last 20 turns (40 messages) to prevent unbounded
         # memory growth in long-running interactive sessions.

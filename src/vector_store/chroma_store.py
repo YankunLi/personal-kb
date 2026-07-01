@@ -248,12 +248,13 @@ class ChromaStore:
         return hashes
 
     def count(self, kb_name: str) -> int:
-        """Return the number of chunks in a knowledge base."""
-        try:
-            collection = self.get_or_create_collection(kb_name)
-            return collection.count()
-        except Exception:
-            return 0
+        """Return the number of chunks in a knowledge base.
+
+        Raises exceptions on database errors so the caller can fall back to
+        a previously-known count instead of silently getting 0.
+        """
+        collection = self.get_or_create_collection(kb_name)
+        return collection.count()
 
     def get_unique_file_count(self, kb_name: str) -> int:
         """Count unique source files in a knowledge base.

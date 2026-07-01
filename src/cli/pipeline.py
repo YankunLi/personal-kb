@@ -450,6 +450,7 @@ class Pipeline:
                 sources=[],
                 hallucination_risk="low",
                 latency_ms=0.0,
+                success=False,
             )
         if len(query) > 4096:
             return RAGResponse(
@@ -457,6 +458,7 @@ class Pipeline:
                 sources=[],
                 hallucination_risk="low",
                 latency_ms=0.0,
+                success=False,
             )
 
         # Normalize query to match document preprocessing (NFC, zero-width
@@ -476,6 +478,7 @@ class Pipeline:
                     sources=[],
                     hallucination_risk="low",
                     latency_ms=timing["total"],
+                    success=False,
                 )
             if not self.bm25.load(kb_name):
                 timing["total"] = (time.perf_counter() - start_time) * 1000
@@ -485,6 +488,7 @@ class Pipeline:
                     sources=[],
                     hallucination_risk="low",
                     latency_ms=timing["total"],
+                    success=False,
                 )
 
         # Compute query embedding once for cache + retrieval
@@ -518,6 +522,7 @@ class Pipeline:
                     sources=[],
                     hallucination_risk="low",
                     latency_ms=timing["total"],
+                    success=False,
                 )
 
         if not results:
@@ -528,6 +533,7 @@ class Pipeline:
                 sources=[],
                 hallucination_risk="low",
                 latency_ms=timing["total"],
+                success=False,
             )
 
         # Rerank
@@ -672,6 +678,7 @@ class Pipeline:
                 "type": "done",
                 "hallucination_risk": "low",
                 "latency_ms": timing["total"],
+                "success": False,
             }
             return
         if not self.bm25.load(kb_name):
@@ -687,6 +694,7 @@ class Pipeline:
                 "type": "done",
                 "hallucination_risk": "low",
                 "latency_ms": timing["total"],
+                "success": False,
             }
             return
         timing["bm25_load"] = (time.perf_counter() - t0) * 1000
@@ -731,6 +739,7 @@ class Pipeline:
                 "type": "done",
                 "hallucination_risk": "low",
                 "latency_ms": timing["total"],
+                "success": False,
             }
             return
         timing["hybrid_search"] = (time.perf_counter() - t0) * 1000
@@ -747,6 +756,7 @@ class Pipeline:
                 "type": "done",
                 "hallucination_risk": "low",
                 "latency_ms": timing["total"],
+                "success": False,
             }
             return
 
@@ -841,4 +851,5 @@ class Pipeline:
             "type": "done",
             "hallucination_risk": risk_level,
             "latency_ms": timing["total"],
+            "success": True,
         }

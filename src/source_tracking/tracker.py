@@ -37,6 +37,7 @@ class RAGResponse:
     sources: list[SourceInfo] = field(default_factory=list)
     hallucination_risk: str = "low"
     latency_ms: float = 0.0
+    success: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -44,6 +45,7 @@ class RAGResponse:
             "sources": [s.to_dict() for s in self.sources],
             "hallucination_risk": self.hallucination_risk,
             "latency_ms": self.latency_ms,
+            "success": self.success,
         }
 
 

@@ -41,7 +41,14 @@ class SemanticCache:
                 return None
 
             indices = [i for i, _ in kb_entries]
-            embeddings = np.stack([e[0] for _, e in kb_entries])
+            try:
+                embeddings = np.stack([e[0] for _, e in kb_entries])
+            except ValueError:
+                # Embedding dimension mismatch (e.g. after model upgrade).
+                # Entries from the old model are stale — clear them for this KB
+                # so the caller falls through to compute a fresh answer.
+                self._entries = [e for e in self._entries if e[3] != kb_name]
+                return None
 
             query_norm = np.linalg.norm(query_embedding)
             if query_norm == 0:
@@ -56,7 +63,12 @@ class SemanticCache:
                 return None
             sims = np.empty(len(embeddings))
             sims[~valid] = -1.0  # Zero-norm entries cannot match
-            sims[valid] = np.dot(embeddings[valid], query_embedding) / (norms[valid] * query_norm)
+            try:
+                sims[valid] = np.dot(embeddings[valid], query_embedding) / (norms[valid] * query_norm)
+            except ValueError:
+                # Dimension mismatch in dot product — clear stale entries
+                self._entries = [e for e in self._entries if e[3] != kb_name]
+                return None
 
             best_local = int(np.argmax(sims))
             if sims[best_local] > self.threshold:
